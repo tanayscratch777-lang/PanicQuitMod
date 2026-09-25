@@ -4,11 +4,17 @@ plugins {
 }
 
 repositories {
-	// Repositories to retrieve artifacts
 }
 
 loom {
-	clientOnlyMinecraftJar()
+	splitEnvironmentSourceSets()
+
+	mods {
+		"modid" {
+			sourceSet sourceSets.main
+			sourceSet sourceSets.client
+		}
+	}
 }
 
 dependencies {
