@@ -10,7 +10,7 @@ import org.lwjgl.glfw.GLFW;
 
 public class ExampleModClient implements ClientModInitializer {
     public static final KeyMapping.Category PANIC_CATEGORY = KeyMapping.Category.register(
-        Identifier.of("panicmod", "panic")
+        Identifier.fromNamespaceAndPath("panicmod", "panic")
     );
 
     public static KeyMapping panicKey;
@@ -25,16 +25,15 @@ public class ExampleModClient implements ClientModInitializer {
         ));
     }
 
-    public static boolean checkAndTrigger(int key, int scancode, int modifiers) {
+    public static boolean checkAndTrigger(int key, int modifiers) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || panicKey == null) return false;
 
-        boolean keyMatches = panicKey.matches(key, scancode);
-        long window = client.getWindow().getWindow();
-        boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0 
-                || GLFW.glfwGetKey(window, GLFW.GLFW_KEY_LEFT_ALT) == GLFW.GLFW_PRESS;
+        boolean keyMatches = (panicKey.getKey().getValue() == key);
+        boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0;
 
         if (keyMatches && altHeld) {
+            long window = client.getWindow().handle();
             GLFW.glfwIconifyWindow(window);
             client.stop();
             return true;
