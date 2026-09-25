@@ -1,21 +1,35 @@
 {
   "schemaVersion": 1,
-  "id": "panicmod",
-  "version": "1.0.0",
-  "name": "Panic Boss Key",
-  "description": "Instantly minimizes, safely saves, and closes Minecraft.",
-  "environment": "client",
+  "id": "modid",
+  "version": "${version}",
+  "name": "Panic Quit Mod",
+  "description": "Instantly minimizes, saves and exits Minecraft.",
+  "authors": [
+    "Me"
+  ],
+  "contact": {},
+  "license": "CC0-1.0",
+  "icon": "assets/modid/icon.png",
+  "environment": "*",
   "entrypoints": {
-    "client": [
+    "main": [
       "com.example.ExampleMod"
+    ],
+    "client": [
+      "com.example.ExampleModClient"
     ]
   },
   "mixins": [
-    "panicmod.mixins.json"
+    "modid.mixins.json",
+    {
+      "config": "modid.client.mixins.json",
+      "environment": "client"
+    }
   ],
   "depends": {
     "fabricloader": ">=0.16.0",
-    "minecraft": "26.1.2",
-    "fabric-key-binding-api-v1": "*"
+    "minecraft": "~26.1.2",
+    "java": ">=25",
+    "fabric-api": "*"
   }
 }
