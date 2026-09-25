@@ -5,6 +5,7 @@ import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
+import net.minecraft.client.input.KeyEvent;
 import net.minecraft.resources.Identifier;
 import org.lwjgl.glfw.GLFW;
 
@@ -25,12 +26,12 @@ public class ExampleModClient implements ClientModInitializer {
         ));
     }
 
-    public static boolean checkAndTrigger(int key, int modifiers) {
+    public static boolean checkAndTrigger(KeyEvent event) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || panicKey == null) return false;
 
-        boolean keyMatches = (panicKey.getKey().getValue() == key);
-        boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0;
+        boolean keyMatches = panicKey.matches(event);
+        boolean altHeld = InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT);
 
         if (keyMatches && altHeld) {
             long window = client.getWindow().handle();
