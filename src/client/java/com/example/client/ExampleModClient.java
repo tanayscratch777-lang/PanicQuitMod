@@ -35,8 +35,30 @@ public class ExampleModClient implements ClientModInitializer {
 
         if (keyMatches && altHeld) {
             long window = client.getWindow().handle();
+
+            // 1. Instantly hide the window
             GLFW.glfwIconifyWindow(window);
-            client.stop();
+
+            // 2. If NOT in a world (title screen, options, etc.), close INSTANTLY
+            if (client.level == null) {
+                System.exit(0);
+                return true;
+            }
+
+            // 3. If in a world / server, safely save and disconnect first
+            new Thread(() -> {
+                try {
+                    // Tell singleplayer server to save all chunks cleanly
+                    if (client.getSingleplayerServer() != null) {
+                        client.getSingleplayerServer().halt(false);
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    // Clean exit without executor thread collisions
+                    System.exit(0);
+                }
+            }, "PanicQuit-Shutdown").start();
+
             return true;
         }
 
