@@ -11,6 +11,9 @@ repositories {
 	// for more information about repositories.
 }
 
+loom {
+	clientOnlyMinecraftJar()
+}
 
 dependencies {
 	// To change the versions see the gradle.properties file
