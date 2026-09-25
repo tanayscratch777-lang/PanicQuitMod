@@ -1,37 +1,37 @@
-package com.example;
+package com.example.client;
 
 import net.fabricmc.api.ClientModInitializer;
-import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.minecraft.client.MinecraftClient;
-import net.minecraft.client.option.KeyBinding;
-import net.minecraft.client.util.InputUtil;
+import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.minecraft.client.Minecraft;
+import net.minecraft.client.KeyMapping;
+import com.mojang.blaze3d.platform.InputConstants;
 import org.lwjgl.glfw.GLFW;
 
 public class ExampleModClient implements ClientModInitializer {
-    public static KeyBinding panicKey;
+    public static KeyMapping panicKey;
 
     @Override
     public void onInitializeClient() {
-        panicKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+        panicKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.panicmod.trigger",
-            InputUtil.Type.KEYSYM,
+            InputConstants.Type.KEYSYM,
             GLFW.GLFW_KEY_I,
-            KeyBinding.Category.MISC
+            KeyMapping.Category.MISC
         ));
     }
 
     public static boolean checkAndTrigger(int key, int scancode, int modifiers) {
-        MinecraftClient client = MinecraftClient.getInstance();
+        Minecraft client = Minecraft.getInstance();
         if (client == null || panicKey == null) return false;
 
-        boolean keyMatches = panicKey.matchesKey(key, scancode);
-        long window = client.getWindow().getHandle();
+        boolean keyMatches = panicKey.matches(key, scancode);
+        long window = client.getWindow().getWindow();
         boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0 
-                || InputUtil.isKeyPressed(window, GLFW.GLFW_KEY_LEFT_ALT);
+                || InputConstants.isKeyDown(window, GLFW.GLFW_KEY_LEFT_ALT);
 
         if (keyMatches && altHeld) {
             GLFW.glfwIconifyWindow(window);
-            client.scheduleStop();
+            client.stop();
             return true;
         }
 
