@@ -1,21 +1,18 @@
 package com.example.client.mixin;
 
 import com.example.client.ExampleModClient;
-import net.minecraft.client.KeyboardHandler;
-import net.minecraft.client.input.KeyEvent;
+import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(KeyboardHandler.class)
+@Mixin(AbstractContainerScreen.class)
 public class ExampleClientMixin {
-    @Inject(method = "keyPress", at = @At("HEAD"), cancellable = true)
-    private void onKeyPress(long handle, int action, KeyEvent event, CallbackInfo ci) {
-        if (action == 1) { // 1 = GLFW_PRESS
-            if (ExampleModClient.checkAndTrigger(event)) {
-                ci.cancel();
-            }
-        }
+    @Inject(method = "renderSlot", at = @At("TAIL"))
+    private void onRenderSlot(GuiGraphics guiGraphics, Slot slot, CallbackInfo ci) {
+        ExampleModClient.Renderer.renderContainerSlot(guiGraphics, slot);
     }
 }

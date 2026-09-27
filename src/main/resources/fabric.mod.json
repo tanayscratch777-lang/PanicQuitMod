@@ -1,20 +1,17 @@
 {
   "schemaVersion": 1,
-  "id": "modid",
+  "id": "autohotbar_fairplay",
   "version": "${version}",
-  "name": "Panic Quit Mod",
-  "description": "Instantly minimizes, saves and exits Minecraft.",
+  "name": "AutoHotbar Fairplay",
+  "description": "Smart, fairplay, zero-lag hotbar organizer overlay.",
   "authors": [
-    "Me"
+    "You"
   ],
   "contact": {},
   "license": "CC0-1.0",
   "icon": "assets/modid/icon.png",
-  "environment": "*",
+  "environment": "client",
   "entrypoints": {
-    "main": [
-      "com.example.ExampleMod"
-    ],
     "client": [
       "com.example.client.ExampleModClient"
     ]
