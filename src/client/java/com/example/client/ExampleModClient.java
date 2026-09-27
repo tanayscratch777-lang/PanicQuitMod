@@ -65,13 +65,11 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // Native 26.1 HUD registration
         HudElementRegistry.addLast(
             Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
             (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
         );
 
-        // Farm & Raid throttled tick loop
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -88,16 +86,16 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 1. ADVANCED CONFIGURATION SYSTEM
+    // 1. CONFIGURATION SYSTEM
     // ==========================================================
     public static class Config {
         private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type"; // "Type", "Specific", "Empty"
-            public String category = "Sword"; // Sword, Pickaxe, Axe, Shovel, Block, Food, Torches, Water Bucket
-            public String variant = "Best"; // Best, Hardest, Most Count
+            public String ruleKind = "Type";
+            public String category = "Sword";
+            public String variant = "Best";
             public String specificId = "";
 
             public Rule(String ruleKind, String category, String variant, String specificId) {
@@ -123,7 +121,6 @@ public class ExampleModClient implements ClientModInitializer {
                 for (int i = 0; i < 9; i++) {
                     slots.add(new ArrayList<>());
                 }
-                // Defaults
                 slots.get(0).add(new Rule("Type", "Sword", "Best", ""));
                 slots.get(1).add(new Rule("Type", "Pickaxe", "Best", ""));
                 slots.get(2).add(new Rule("Type", "Axe", "Best", ""));
@@ -185,7 +182,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 2. LAG-FREE FARM-OPTIMIZED ENGINE
+    // 2. ENGINE (NO FALSE ALERTS)
     // ==========================================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -201,7 +198,7 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             tickCounter++;
-            if (tickCounter % 4 != 0) return; // Evaluates at most 4x a second
+            if (tickCounter % 4 != 0) return;
 
             Inventory inv = client.player.getInventory();
             int hash = 1;
@@ -227,10 +224,9 @@ public class ExampleModClient implements ClientModInitializer {
 
                 int bestSlot = -1;
 
-                // Priority: lower index wins (Rule 1 has highest priority)
                 for (Config.Rule rule : rules) {
                     if ("Empty".equalsIgnoreCase(rule.ruleKind)) {
-                        bestSlot = -2; // Stop rule: leave empty!
+                        bestSlot = -2;
                         break;
                     }
 
@@ -251,21 +247,17 @@ public class ExampleModClient implements ClientModInitializer {
 
                     if (candidate != -1) {
                         bestSlot = candidate;
-                        break; // Top priority matched!
+                        break;
                     }
                 }
 
+                // ONLY trigger if an item exists AND is not already in the hotbar slot!
                 if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
                     if (bestSlot != hotbarSlot) {
                         if (bestSlot >= 9 && bestSlot <= 35) {
                             TARGET_HOTBAR_FOR_INV_SLOT[bestSlot] = hotbarSlot;
                         }
-                        HOTBAR_NEEDS_UPGRADE[hotbarSlot] = true;
-                    }
-                } else if (bestSlot != -2) {
-                    ItemStack current = inv.getItem(hotbarSlot);
-                    if (current.isEmpty()) {
                         HOTBAR_NEEDS_UPGRADE[hotbarSlot] = true;
                     }
                 }
@@ -332,7 +324,6 @@ public class ExampleModClient implements ClientModInitializer {
                             float destroySpeed = block.defaultBlockState().getDestroySpeed(null, null);
                             return (destroySpeed > 0 ? destroySpeed * 10.0 : 5.0) + (stack.getCount() * 0.05);
                         } else {
-                            // "Most Count"
                             return stack.getCount();
                         }
                     }
@@ -371,7 +362,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 3. ELEGANT RENDERER (VULKAN & SODIUM COMPATIBLE)
+    // 3. CLEAN RENDERER (VULKAN & SODIUM PROOF)
     // ==========================================================
     public static class Renderer {
         public static final int EMERALD_GREEN = 0xFF2ECC71;
@@ -389,12 +380,11 @@ public class ExampleModClient implements ClientModInitializer {
 
             for (int s = 0; s < 9; s++) {
                 if (Engine.slotNeedsUpgrade(s)) {
-                    int x = hotbarX + s * 20 + 2;
+                    int x = hotbarX + s * 20 + 3;
                     int y = hotbarY + 3;
 
-                    // Clean emerald top notch & corner accent
-                    graphics.fill(x + 1, y - 2, x + 15, y, EMERALD_GREEN);
-                    graphics.fill(x + 11, y - 1, x + 15, y + 3, EMERALD_GREEN);
+                    // Clean 2-pixel emerald dot in the corner
+                    graphics.fill(x + 12, y + 1, x + 15, y + 4, EMERALD_GREEN);
                 }
             }
         }
@@ -414,14 +404,12 @@ public class ExampleModClient implements ClientModInitializer {
                 int x = slot.x;
                 int y = slot.y;
 
-                // 1. Smooth Emerald Tint & 1px crisp outline (Matching Image 4)
                 graphics.fill(x, y, x + 16, y + 16, EMERALD_TINT);
                 graphics.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
                 graphics.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
                 graphics.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
                 graphics.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
 
-                // 2. High-contrast Black & White Key Badge centered over top border
                 String keyName = Engine.getKeyName(targetHotbarSlot);
                 Font font = client.font;
                 int textW = font.width(keyName);
@@ -438,7 +426,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 4. THE FAITHFUL COMPLEX UI (SCREENSHOTS 1, 3, 7, 8)
+    // 4. MAIN CONFIG SCREEN (OPAQUE & READABLE)
     // ==========================================================
     public static class ModernConfigScreen extends Screen {
         private final Screen parent;
@@ -456,7 +444,6 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Glass Mode Toggle Switch (Top Right)
             this.addRenderableWidget(Button.builder(
                 Component.literal("Glass " + (Config.data.glassMode ? "ON" : "OFF")),
                 btn -> {
@@ -464,9 +451,8 @@ public class ExampleModClient implements ClientModInitializer {
                     Config.save();
                     btn.setMessage(Component.literal("Glass " + (Config.data.glassMode ? "ON" : "OFF")));
                 }
-            ).bounds(cardX + cardW - 75, cardY + 12, 65, 16).build());
+            ).bounds(cardX + cardW - 80, cardY + 12, 70, 18).build());
 
-            // 9 Slot Buttons
             int slotStart = cardX + (cardW / 2) - 95;
             for (int i = 0; i < 9; i++) {
                 final int idx = i;
@@ -476,7 +462,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(slotStart + i * 21, cardY + 54, 19, 18).build());
             }
 
-            // Rule Cards inside the slot (with red X to delete)
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
             int listY = cardY + 98;
             for (int r = 0; r < Math.min(rules.size(), 3); r++) {
@@ -487,11 +472,10 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 45, listY + r * 22, 20, 18).build());
             }
 
-            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("+ Add rule"),
                 btn -> this.minecraft.setScreen(new AddRuleScreen(this, selectedSlot))
-            ).bounds(cardX + 16, cardY + cardH - 32, 180, 20).build());
+            ).bounds(cardX + 16, cardY + cardH - 32, 160, 20).build());
 
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
@@ -506,34 +490,30 @@ public class ExampleModClient implements ClientModInitializer {
 
         @Override
         public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
-            super.extractRenderState(graphics, mouseX, mouseY, delta);
-
             int cardW = Math.min(420, this.width - 24);
             int cardH = Math.min(230, this.height - 30);
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // 1. Dark Glass Background
-            int bg = Config.data.glassMode ? 0xD0131822 : 0xF5131822;
+            // DRAW BACKGROUND BEFORE SUPER SO WIDGETS STAY FULLY VISIBLE!
+            int bg = Config.data.glassMode ? 0xE8141B26 : 0xFF141B26;
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, bg);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF354256);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF354256);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF354256);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF354256);
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF35445A);
+            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF35445A);
+            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF35445A);
+            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF35445A);
 
-            // 2. Titles
-            graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFF, false);
-            graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0x88A0B0, false);
+            // BRIGHT WHITE AND LIGHT BLUE TEXT
+            graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
+            graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0xFFA0B4C8, false);
 
-            // 3. Tabs: [Complex] [Simple]
-            graphics.fill(cardX + 16, cardY + 38, cardX + 75, cardY + 52, 0xFF242C3B);
-            graphics.fill(cardX + 16, cardY + 51, cardX + 75, cardY + 53, 0xFF2ECC71); // Active Green underline
-            graphics.text(this.font, "Complex", cardX + 26, cardY + 41, 0xFFFFFF, false);
+            graphics.fill(cardX + 16, cardY + 38, cardX + 75, cardY + 52, 0xFF242F42);
+            graphics.fill(cardX + 16, cardY + 51, cardX + 75, cardY + 53, 0xFF2ECC71);
+            graphics.text(this.font, "Complex", cardX + 26, cardY + 41, 0xFFFFFFFF, false);
 
-            graphics.fill(cardX + 80, cardY + 38, cardX + 135, cardY + 52, 0x66242C3B);
-            graphics.text(this.font, "Simple", cardX + 92, cardY + 41, 0x778899, false);
+            graphics.fill(cardX + 80, cardY + 38, cardX + 135, cardY + 52, 0xFF1B2230);
+            graphics.text(this.font, "Simple", cardX + 92, cardY + 41, 0xFF708090, false);
 
-            // 4. Emerald ring around selected slot
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
             graphics.fill(selX - 1, cardY + 53, selX + 20, cardY + 54, 0xFF2ECC71);
@@ -541,26 +521,26 @@ public class ExampleModClient implements ClientModInitializer {
             graphics.fill(selX - 1, cardY + 53, selX, cardY + 73, 0xFF2ECC71);
             graphics.fill(selX + 19, cardY + 53, selX + 20, cardY + 73, 0xFF2ECC71);
 
-            // 5. Slot Info
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
-            graphics.text(this.font, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 80, 0xA0B0C0, false);
+            graphics.text(this.font, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 80, 0xFFA0B4C8, false);
 
-            // 6. Rules Container Card
             int boxY = cardY + 92;
             int boxH = cardH - 134;
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0xAA0D1118);
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0xFF252E3E);
+            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0xFF0D121B);
+            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0xFF283446);
 
             if (rules.isEmpty()) {
-                graphics.text(this.font, "No rules — click \"+ Add rule\" to start", cardX + (cardW / 2) - 80, boxY + 28, 0x778899, false);
+                graphics.text(this.font, "No rules — click \"+ Add rule\" to start", cardX + (cardW / 2) - 80, boxY + 28, 0xFF708090, false);
             } else {
                 for (int r = 0; r < Math.min(rules.size(), 3); r++) {
                     Config.Rule rule = rules.get(r);
                     int rY = boxY + 6 + (r * 22);
-                    graphics.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xFF1D2532);
-                    graphics.text(this.font, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xEEEEEE, false);
+                    graphics.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xFF1C2534);
+                    graphics.text(this.font, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xFFFFFFFF, false);
                 }
             }
+
+            super.extractRenderState(graphics, mouseX, mouseY, delta);
         }
 
         @Override
@@ -571,13 +551,13 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 5. THE "+ ADD RULE" SCREENSHOT CLONE (IMAGES 7 & 8)
+    // 5. ADD RULE MODAL (OPAQUE & READABLE)
     // ==========================================================
     public static class AddRuleScreen extends Screen {
         private final ModernConfigScreen parent;
         private final int slotIndex;
 
-        private String currentTab = "Type"; // Specific, Type, Conditional, Empty
+        private String currentTab = "Type";
         private static final String[] CATEGORIES = { "Sword", "Pickaxe", "Axe", "Shovel", "Block", "Food", "Torches", "Water Bucket" };
         private int categoryIndex = 0;
         private int variantIndex = 0;
@@ -595,7 +575,6 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // 4 Tabs: [Specific] [Type] [Conditional] [Empty]
             String[] tabs = { "Specific", "Type", "Conditional", "Empty" };
             int tabW = (cardW - 32) / 4;
             for (int t = 0; t < tabs.length; t++) {
@@ -607,7 +586,6 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             if ("Type".equals(currentTab)) {
-                // Category button
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Category: " + CATEGORIES[categoryIndex]),
                     btn -> {
@@ -617,18 +595,17 @@ public class ExampleModClient implements ClientModInitializer {
                     }
                 ).bounds(cardX + 24, cardY + 68, 175, 20).build());
 
-                // Variant button
                 String[] variants = getVariants(CATEGORIES[categoryIndex]);
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Variant: " + variants[variantIndex % variants.length]),
                     btn -> {
                         variantIndex = (variantIndex + 1) % variants.length;
                         btn.setMessage(Component.literal("Variant: " + variants[variantIndex % variants.length]));
+                        this.rebuildWidgets();
                     }
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
-            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
                 btn -> this.minecraft.setScreen(this.parent)
@@ -672,27 +649,22 @@ public class ExampleModClient implements ClientModInitializer {
 
         @Override
         public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
-            super.extractRenderState(graphics, mouseX, mouseY, delta);
-
             int cardW = Math.min(420, this.width - 24);
             int cardH = Math.min(230, this.height - 30);
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Background Card
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xF5131822);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF354256);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF354256);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF354256);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF354256);
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xFF141B26);
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF35445A);
+            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF35445A);
+            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF35445A);
+            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF35445A);
 
-            // Title & Priority Badge
-            graphics.text(this.font, "Add rule", cardX + 16, cardY + 12, 0xFFFFFF, false);
+            graphics.text(this.font, "Add rule", cardX + 16, cardY + 12, 0xFFFFFFFF, false);
             int rulesCount = Config.getRulesForSlot(slotIndex).size();
-            graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF242C3B);
-            graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xCCCCCC, false);
+            graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF242F42);
+            graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xFFDDDDDD, false);
 
-            // Active tab green line
             String[] tabs = { "Specific", "Type", "Conditional", "Empty" };
             int tabW = (cardW - 32) / 4;
             for (int t = 0; t < tabs.length; t++) {
@@ -702,13 +674,14 @@ public class ExampleModClient implements ClientModInitializer {
                 }
             }
 
-            // Description Box
             String[] descLines = getDescription().split("\n");
             int textY = cardY + 104;
             for (String line : descLines) {
-                graphics.text(this.font, line, cardX + 24, textY, 0xA0B0C0, false);
+                graphics.text(this.font, line, cardX + 24, textY, 0xFFA0B4C8, false);
                 textY += 12;
             }
+
+            super.extractRenderState(graphics, mouseX, mouseY, delta);
         }
     }
 }
