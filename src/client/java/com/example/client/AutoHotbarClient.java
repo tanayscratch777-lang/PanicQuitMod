@@ -45,7 +45,9 @@ public class AutoHotbarClient implements ClientModInitializer {
         Identifier.fromNamespaceAndPath("autohotbar", "main")
     );
 
+    // Default toggle key: None (unbound)
     public static KeyMapping toggleKey;
+    // Default config screen key: H
     public static KeyMapping openConfigKey;
 
     @Override
@@ -66,11 +68,13 @@ public class AutoHotbarClient implements ClientModInitializer {
             CATEGORY
         ));
 
+        // HUD hotbar indicator (walking around)
         HudElementRegistry.addLast(
             Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
             (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
         );
 
+        // Client Tick: handles hotkeys and throttled farm-safe inventory evaluation
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -94,7 +98,7 @@ public class AutoHotbarClient implements ClientModInitializer {
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type";
+            public String ruleKind = "Type"; // Type, Specific, Conditional, Empty
             public String category = "Sword";
             public String variant = "Best DPS";
             public String specificId = "";
@@ -266,7 +270,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                     HOTBAR_NEEDS_UPGRADE[hotbarSlot] = true;
                 } else if (bestSlot >= 0 && bestSlot <= 8) {
                     claimedInvSlots.add(bestSlot);
-                    // Already in hotbar, no alert!
                 }
             }
         }
@@ -411,7 +414,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                             if (itemId.contains("planks")) return 50.0 + stack.getCount();
                             return 1.0;
                         } else {
-                            // "Most Count"
                             return stack.getCount();
                         }
                     }
@@ -485,10 +487,8 @@ public class AutoHotbarClient implements ClientModInitializer {
                     int slotX = hotbarX + s * 20;
                     int slotY = hotbarY;
 
-                    // Clean top accent line
                     graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
 
-                    // Badge showing hotkey
                     String key = Engine.getKeyName(s);
                     int textW = client.font.width(key);
                     int bW = Math.max(textW + 4, 9);
@@ -613,18 +613,15 @@ public class AutoHotbarClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Translucent Glass Canvas
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xB80D111A);
             graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x605B708B);
             graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x605B708B);
             graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x605B708B);
             graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x605B708B);
 
-            // Title & Subtitle
             graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
             graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0xFF94A3B8, false);
 
-            // Emerald Active Ring around selected slot
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
             graphics.fill(selX - 1, cardY + 47, selX + 20, cardY + 48, 0xFF10B981);
@@ -662,7 +659,7 @@ public class AutoHotbarClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 5. THE ULTIMATE "+ ADD RULE" SCREEN
+    // 5. ALL CATEGORIES & VARIANTS "ADD RULE" SCREEN
     // ==========================================================
     public static class AddRuleScreen extends Screen {
         private final ModernConfigScreen parent;
@@ -675,13 +672,11 @@ public class AutoHotbarClient implements ClientModInitializer {
         private int categoryIndex = 0;
         private int variantIndex = 0;
 
-        // Specific Item & Enchantment selections
         public String chosenItemId = "minecraft:water_bucket";
         public String chosenEnchant = "";
         public int chosenEnchantLevel = 1;
         public boolean mustBeEnchanted = false;
 
-        // Conditional controls
         private int ifSlot = 1;
         private int thenUseSlot = 1;
 
@@ -708,7 +703,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
             }
 
-            // CONTROLS FOR "Type"
             if ("Type".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Category: " + CATEGORIES[categoryIndex]),
@@ -729,7 +723,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
-            // CONTROLS FOR "Specific"
             if ("Specific".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Pick Item: " + chosenItemId.replace("minecraft:", "")),
@@ -750,7 +743,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + 24, cardY + 86, 200, 18).build());
             }
 
-            // CONTROLS FOR "Conditional"
             if ("Conditional".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("IF Slot " + ifSlot + " has item"),
@@ -769,7 +761,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
-            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
                 btn -> this.minecraft.setScreen(this.parent)
@@ -916,21 +907,45 @@ public class AutoHotbarClient implements ClientModInitializer {
             searchBox.setResponder(this::updateSearch);
             this.addRenderableWidget(searchBox);
 
-            // Pagination Buttons
+            // Pagination Controls
             this.addRenderableWidget(Button.builder(
                 Component.literal("< Prev"),
-                btn -> { if (page > 0) page--; }
+                btn -> { if (page > 0) { page--; this.rebuildWidgets(); } }
             ).bounds(centerX - 100, this.height - 28, 60, 20).build());
 
             this.addRenderableWidget(Button.builder(
                 Component.literal("Next >"),
-                btn -> { if ((page + 1) * ITEMS_PER_PAGE < filteredItems.size()) page++; }
+                btn -> { if ((page + 1) * ITEMS_PER_PAGE < filteredItems.size()) { page++; this.rebuildWidgets(); } }
             ).bounds(centerX + 40, this.height - 28, 60, 20).build());
 
             this.addRenderableWidget(Button.builder(
                 Component.literal("Back"),
                 btn -> this.minecraft.setScreen(this.parent)
             ).bounds(centerX - 30, this.height - 28, 60, 20).build());
+
+            // 8x5 Interactive Item Buttons (Native and conflict-free!)
+            int gridStartX = centerX - 80;
+            int gridStartY = 48;
+            int startIdx = page * ITEMS_PER_PAGE;
+
+            for (int row = 0; row < 5; row++) {
+                for (int col = 0; col < 8; col++) {
+                    int idx = startIdx + (row * 8 + col);
+                    if (idx >= filteredItems.size()) break;
+
+                    Item item = filteredItems.get(idx);
+                    String name = BuiltInRegistries.ITEM.getKey(item).getPath();
+                    String label = name.length() > 3 ? name.substring(0, 3) : name;
+
+                    this.addRenderableWidget(Button.builder(
+                        Component.literal(label),
+                        btn -> {
+                            parent.chosenItemId = BuiltInRegistries.ITEM.getKey(item).toString();
+                            this.minecraft.setScreen(this.parent);
+                        }
+                    ).bounds(gridStartX + col * 20, gridStartY + row * 20, 19, 19).build());
+                }
+            }
         }
 
         private void updateSearch(String text) {
@@ -943,32 +958,7 @@ public class AutoHotbarClient implements ClientModInitializer {
                     .filter(i -> BuiltInRegistries.ITEM.getKey(i).getPath().toLowerCase().contains(query))
                     .toList();
             }
-        }
-
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            int centerX = this.width / 2;
-            int gridStartX = centerX - 80;
-            int gridStartY = 50;
-
-            int startIdx = page * ITEMS_PER_PAGE;
-            for (int row = 0; row < 5; row++) {
-                for (int col = 0; col < 8; col++) {
-                    int idx = startIdx + (row * 8 + col);
-                    if (idx >= filteredItems.size()) break;
-
-                    int x = gridStartX + col * 20;
-                    int y = gridStartY + row * 20;
-
-                    if (mouseX >= x && mouseX < x + 18 && mouseY >= y && mouseY < y + 18) {
-                        parent.chosenItemId = BuiltInRegistries.ITEM.getKey(filteredItems.get(idx)).toString();
-                        this.minecraft.setScreen(this.parent);
-                        return true;
-                    }
-                }
-            }
-
-            return super.mouseClicked(mouseX, mouseY, button);
+            this.rebuildWidgets();
         }
 
         @Override
@@ -976,28 +966,8 @@ public class AutoHotbarClient implements ClientModInitializer {
             graphics.fill(0, 0, this.width, this.height, 0xD80D111A);
 
             int centerX = this.width / 2;
-            graphics.drawCenteredString(this.font, "Pick an Item (" + filteredItems.size() + " available)", centerX, 10, 0xFFFFFFFF);
-
-            int gridStartX = centerX - 80;
-            int gridStartY = 50;
-
-            int startIdx = page * ITEMS_PER_PAGE;
-            for (int row = 0; row < 5; row++) {
-                for (int col = 0; col < 8; col++) {
-                    int idx = startIdx + (row * 8 + col);
-                    if (idx >= filteredItems.size()) break;
-
-                    int x = gridStartX + col * 20;
-                    int y = gridStartY + row * 20;
-
-                    boolean hovered = (mouseX >= x && mouseX < x + 18 && mouseY >= y && mouseY < y + 18);
-                    graphics.fill(x, y, x + 18, y + 18, hovered ? 0x9010B981 : 0x601E293B);
-
-                    Item item = filteredItems.get(idx);
-                    String name = BuiltInRegistries.ITEM.getKey(item).getPath();
-                    graphics.text(this.font, name.substring(0, Math.min(2, name.length())), x + 2, y + 5, 0xFFF1F5F9, false);
-                }
-            }
+            String title = "Pick an Item (" + filteredItems.size() + " available)";
+            graphics.text(this.font, title, centerX - this.font.width(title) / 2, 10, 0xFFFFFFFF, false);
 
             super.extractRenderState(graphics, mouseX, mouseY, delta);
         }
@@ -1037,7 +1007,7 @@ public class AutoHotbarClient implements ClientModInitializer {
             searchBox.setResponder(this::updateSearch);
             this.addRenderableWidget(searchBox);
 
-            // Level adjuster
+            // Level Adjuster
             this.addRenderableWidget(Button.builder(
                 Component.literal("-"),
                 btn -> { if (selectedLevel > 1) selectedLevel--; }
@@ -1052,6 +1022,21 @@ public class AutoHotbarClient implements ClientModInitializer {
                 Component.literal("Back"),
                 btn -> this.minecraft.setScreen(this.parent)
             ).bounds(centerX + 30, this.height - 28, 80, 20).build());
+
+            // Interactive Enchantment Buttons (Conflict-free!)
+            int startY = 48;
+            for (int i = 0; i < Math.min(filtered.size(), 7); i++) {
+                String enchant = filtered.get(i);
+                String name = enchant.replace("_", " ");
+                this.addRenderableWidget(Button.builder(
+                    Component.literal(name),
+                    btn -> {
+                        parent.chosenEnchant = enchant;
+                        parent.chosenEnchantLevel = selectedLevel;
+                        this.minecraft.setScreen(this.parent);
+                    }
+                ).bounds(centerX - 100, startY + i * 22, 200, 20).build());
+            }
         }
 
         private void updateSearch(String query) {
@@ -1061,24 +1046,7 @@ public class AutoHotbarClient implements ClientModInitializer {
             } else {
                 filtered = Arrays.stream(ALL_ENCHANTS).filter(e -> e.contains(q)).toList();
             }
-        }
-
-        @Override
-        public boolean mouseClicked(double mouseX, double mouseY, int button) {
-            int centerX = this.width / 2;
-            int startY = 50;
-
-            for (int i = 0; i < Math.min(filtered.size(), 7); i++) {
-                int y = startY + i * 20;
-                if (mouseX >= centerX - 110 && mouseX < centerX + 110 && mouseY >= y && mouseY < y + 18) {
-                    parent.chosenEnchant = filtered.get(i);
-                    parent.chosenEnchantLevel = selectedLevel;
-                    this.minecraft.setScreen(this.parent);
-                    return true;
-                }
-            }
-
-            return super.mouseClicked(mouseX, mouseY, button);
+            this.rebuildWidgets();
         }
 
         @Override
@@ -1086,17 +1054,8 @@ public class AutoHotbarClient implements ClientModInitializer {
             graphics.fill(0, 0, this.width, this.height, 0xD80D111A);
 
             int centerX = this.width / 2;
-            graphics.drawCenteredString(this.font, "Pick an Enchantment (" + filtered.size() + " available)", centerX, 10, 0xFFFFFFFF);
-
-            int startY = 50;
-            for (int i = 0; i < Math.min(filtered.size(), 7); i++) {
-                int y = startY + i * 20;
-                boolean hovered = (mouseX >= centerX - 110 && mouseX < centerX + 110 && mouseY >= y && mouseY < y + 18);
-                graphics.fill(centerX - 110, y, centerX + 110, y + 18, hovered ? 0x9010B981 : 0x601E293B);
-
-                String name = filtered.get(i).replace("_", " ");
-                graphics.text(this.font, name, centerX - 100, y + 5, 0xFFF1F5F9, false);
-            }
+            String title = "Pick an Enchantment (" + filtered.size() + " available)";
+            graphics.text(this.font, title, centerX - this.font.width(title) / 2, 10, 0xFFFFFFFF, false);
 
             graphics.text(this.font, "Level: " + selectedLevel, centerX - 80, this.height - 22, 0xFFFFFFFF, false);
 
