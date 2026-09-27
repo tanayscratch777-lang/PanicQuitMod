@@ -1,20 +1,19 @@
 package com.example.client.mixin;
 
 import com.example.client.AutoHotbarClient;
-import net.minecraft.client.gui.DrawContext;
-import net.minecraft.client.gui.screen.ingame.HandledScreen;
-import net.minecraft.client.gui.screen.ingame.CreativeInventoryScreen;
-import net.minecraft.screen.slot.Slot;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.world.inventory.Slot;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.injection.At;
 import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 
-@Mixin(HandledScreen.class)
+@Mixin(AbstractContainerScreen.class)
 public class ContainerScreenMixin {
-    @Inject(method = "drawSlot", at = @At("TAIL"))
-    private void onDrawSlot(DrawContext context, Slot slot, CallbackInfo ci) {
-        // Allows both survival and creative practice to work flawlessly
-        AutoHotbarClient.Renderer.renderContainerSlot(context, slot);
+    @Inject(method = "extractSlot", at = @At("TAIL"))
+    private void onExtractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
+        // Allows both survival and creative mode practice to work flawlessly
+        AutoHotbarClient.Renderer.renderContainerSlot(graphics, slot);
     }
 }
