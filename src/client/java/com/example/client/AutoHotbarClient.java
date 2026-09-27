@@ -1,4 +1,4 @@
-package com.autohotbar.client;
+package com.example.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
@@ -89,7 +89,6 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         });
     }
 
-    // Direct ModMenu configuration entrypoint (Zero dollar signs!)
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return LiquidGlassConfigScreen::new;
@@ -226,7 +225,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
             }
 
             tickCounter++;
-            if (tickCounter % 5 != 0) return; // Evaluates reliably every 5 ticks (250ms)
+            if (tickCounter % 5 != 0) return;
 
             evaluate(client.player.getInventory());
         }
@@ -494,10 +493,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     int slotX = hotbarX + s * 20;
                     int slotY = hotbarY;
 
-                    // Clean emerald top accent line
                     graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
 
-                    // Hotkey badge in corner
                     String key = Engine.getKeyName(s);
                     int textW = client.font.width(key);
                     int bW = Math.max(textW + 4, 9);
@@ -520,10 +517,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
 
             int invSlot = slot.getContainerSlot();
 
-            // STRICTLY ignore armor (36..39) and offhand (40)
             if (invSlot < 0 || invSlot > 35) return;
 
-            // Highlight source upgrade item in main inventory (9..35) or wrong hotbar slot
             int targetHotbarSlot = Engine.getTargetHotbarSlot(invSlot);
             if (targetHotbarSlot >= 0 && targetHotbarSlot < 9) {
                 int x = slot.x;
@@ -549,7 +544,6 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                 graphics.text(font, badgeText, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
             }
 
-            // Outline target hotbar slot in the inventory screen
             if (invSlot >= 0 && invSlot <= 8 && Engine.slotNeedsUpgrade(invSlot)) {
                 int x = slot.x;
                 int y = slot.y;
@@ -562,7 +556,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 4. TRUE LIQUID GLASS CONFIG SCREEN
+    // 4. MAIN MODERN GLASS CONFIG SCREEN
     // ==========================================================
     public static class LiquidGlassConfigScreen extends Screen {
         private final Screen parent;
@@ -622,18 +616,15 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Liquid Glass Canvas
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xC8101726);
             graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x904F6B90);
             graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x304F6B90);
             graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x504F6B90);
             graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x504F6B90);
 
-            // Title
             graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
             graphics.text(this.font, "Smart, anticheat-safe hotbar manager with instant overlay.", cardX + 16, cardY + 26, 0xFF94A3B8, false);
 
-            // Emerald Active Ring around selected slot
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
             graphics.fill(selX - 1, cardY + 47, selX + 20, cardY + 48, 0xFF10B981);
@@ -672,7 +663,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 5. ADD RULE SCREEN (ONLY 2 CLEAN TABS: TYPE & SPECIFIC)
+    // 5. ALL CATEGORIES & VARIANTS "ADD RULE" SCREEN
     // ==========================================================
     public static class AddRuleScreen extends Screen {
         private final LiquidGlassConfigScreen parent;
@@ -860,8 +851,10 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                 }
             }
 
+            // Line 864 FIX: Correctly extracts the Item from the Optional<Reference<Item>>
             if ("Specific".equals(currentTab)) {
-                Item item = BuiltInRegistries.ITEM.get(Identifier.tryParse(chosenItemId));
+                Identifier id = Identifier.tryParse(chosenItemId);
+                Item item = id != null ? BuiltInRegistries.ITEM.get(id).map(ref -> ref.value()).orElse(Items.AIR) : Items.AIR;
                 if (item != null && item != Items.AIR) {
                     graphics.fakeItem(new ItemStack(item), cardX + 24, cardY + 62);
                 }
@@ -986,7 +979,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 7. ENCHANTMENT PICKER (MAX LEVELS, MULTI-SELECT, CLEAN NAMES)
+    // 7. SEARCHABLE ENCHANTMENT PICKER SCREEN (ALL 43 ENCHANTS)
     // ==========================================================
     public static class EnchantPickerScreen extends Screen {
         private final AddRuleScreen parent;
