@@ -3,7 +3,7 @@
   "id": "autohotbar_fairplay",
   "version": "${version}",
   "name": "AutoHotbar Fairplay",
-  "description": "Smart, fairplay, zero-lag hotbar organizer overlay.",
+  "description": "Smart, fairplay hotbar organizer with integrated panic boss key.",
   "authors": [
     "You"
   ],

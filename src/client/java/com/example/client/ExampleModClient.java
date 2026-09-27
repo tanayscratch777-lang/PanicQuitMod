@@ -68,7 +68,7 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // 3. Built-in Panic Quit Key (Default: I, triggers with Left Alt)
+        // 3. Integrated Panic Quit Key (Default: I, triggers with Left Alt)
         panicKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.autohotbar.panic",
             InputConstants.Type.KEYSYM,
@@ -76,13 +76,13 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // HUD Hotbar Indicator (renders cleanly on in-game HUD while walking around)
+        // HUD Hotbar Overlay
         HudElementRegistry.addLast(
             Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
             (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
         );
 
-        // Client Tick: handles keys & farm-optimized throttled inventory evaluation
+        // Tick loop: keys & farm-optimized inventory cache
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -99,13 +99,13 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // PANIC BUTTON LOGIC (INTEGRATED)
+    // PANIC BUTTON LOGIC
     // ==========================================================
     public static boolean checkPanic(int key, int scancode, int modifiers) {
         Minecraft client = Minecraft.getInstance();
         if (client == null || panicKey == null) return false;
 
-        boolean keyMatches = (panicKey.matches(key, scancode));
+        boolean keyMatches = panicKey.matches(key, scancode);
         boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0 
                 || InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT);
 
@@ -143,7 +143,7 @@ public class ExampleModClient implements ClientModInitializer {
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type"; // Type, Specific, Conditional, Empty
+            public String ruleKind = "Type";
             public String category = "Sword";
             public String variant = "Best DPS";
             public String specificId = "";
@@ -159,7 +159,7 @@ public class ExampleModClient implements ClientModInitializer {
             public String getDisplayText() {
                 if ("Empty".equalsIgnoreCase(ruleKind)) return "Leave Slot Empty (Stop Rule)";
                 if ("Specific".equalsIgnoreCase(ruleKind)) {
-                    String base = "Item: " + (specificId.isEmpty() ? "None" : specificId);
+                    String base = "Item: " + (specificId.isEmpty() ? "None" : specificId.replace("minecraft:", ""));
                     return mustBeEnchanted ? base + " (Enchanted)" : base;
                 }
                 if ("Conditional".equalsIgnoreCase(ruleKind)) return "Conditional Rule";
@@ -176,7 +176,6 @@ public class ExampleModClient implements ClientModInitializer {
                 for (int i = 0; i < 9; i++) {
                     slots.add(new ArrayList<>());
                 }
-                // Default setup
                 slots.get(0).add(new Rule("Type", "Sword", "Best DPS", ""));
                 slots.get(1).add(new Rule("Type", "Pickaxe", "Best Tier", ""));
                 slots.get(2).add(new Rule("Type", "Axe", "Best Weapon", ""));
@@ -238,7 +237,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 2. ENGINE (FARM OPTIMIZED, NO GHOST MARKS)
+    // 2. ENGINE (NO FALSE ALERTS)
     // ==========================================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -254,7 +253,7 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             tickCounter++;
-            if (tickCounter % 4 != 0) return; // Evaluates at most 4x a second
+            if (tickCounter % 4 != 0) return;
 
             Inventory inv = client.player.getInventory();
             int hash = 1;
@@ -282,7 +281,7 @@ public class ExampleModClient implements ClientModInitializer {
 
                 for (Config.Rule rule : rules) {
                     if ("Empty".equalsIgnoreCase(rule.ruleKind)) {
-                        bestSlot = -2; // Stop rule: slot remains empty
+                        bestSlot = -2;
                         break;
                     }
 
@@ -307,7 +306,6 @@ public class ExampleModClient implements ClientModInitializer {
                     }
                 }
 
-                // ONLY trigger upgrade if an item is found AND is not already in the hotbar slot!
                 if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
                     if (bestSlot != hotbarSlot) {
@@ -386,15 +384,13 @@ public class ExampleModClient implements ClientModInitializer {
                     if (item instanceof BlockItem blockItem && !itemId.contains("torch")) {
                         if ("Hardest".equalsIgnoreCase(rule.variant)) {
                             Block block = blockItem.getBlock();
-                            float destroySpeed = block.defaultBlockState().getDestroySpeed(null, null);
-                            return (destroySpeed > 0 ? destroySpeed * 10.0 : 5.0) + (stack.getCount() * 0.05);
+                            return block.getExplosionResistance() * 10.0 + (stack.getCount() * 0.05);
                         } else if ("Soft Utility".equalsIgnoreCase(rule.variant)) {
                             if (itemId.contains("dirt") || itemId.contains("cobble") || itemId.contains("netherrack")) {
                                 return 50.0 + stack.getCount();
                             }
                             return 1.0;
                         } else {
-                            // "Most Count"
                             return stack.getCount();
                         }
                     }
@@ -452,25 +448,34 @@ public class ExampleModClient implements ClientModInitializer {
     public static class Renderer {
         public static final int EMERALD_GREEN = 0xFF10B981;
         public static final int EMERALD_TINT = 0x3510B981;
-        public static final int BADGE_BG = 0xEE111827;
+        public static final int BADGE_BG = 0xF0111827;
 
         public static void renderHudHotbar(GuiGraphicsExtractor graphics) {
             if (!Config.isEnabled()) return;
             Minecraft client = Minecraft.getInstance();
             if (client.player == null) return;
 
-            int midX = graphics.guiWidth() / 2;
-            int hotbarX = midX - 90;
+            int hotbarX = (graphics.guiWidth() - 182) / 2;
             int hotbarY = graphics.guiHeight() - 22;
 
             for (int s = 0; s < 9; s++) {
                 if (Engine.slotNeedsUpgrade(s)) {
-                    int x = hotbarX + s * 20 + 3;
-                    int y = hotbarY + 3;
+                    int slotX = hotbarX + s * 20;
+                    int slotY = hotbarY;
 
-                    // Clean emerald top notch & corner accent
-                    graphics.fill(x + 1, y - 2, x + 15, y, EMERALD_GREEN);
-                    graphics.fill(x + 11, y - 1, x + 15, y + 3, EMERALD_GREEN);
+                    // Clean top accent line
+                    graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
+
+                    // Badge in corner showing hotkey
+                    String key = Engine.getKeyName(s);
+                    int textW = client.font.width(key);
+                    int bW = Math.max(textW + 4, 9);
+                    int bX = slotX + 20 - bW;
+                    int bY = slotY - 4;
+
+                    graphics.fill(bX, bY, bX + bW, bY + 8, BADGE_BG);
+                    graphics.fill(bX, bY, bX + bW, bY + 1, EMERALD_GREEN);
+                    graphics.text(client.font, key, bX + (bW - textW) / 2, bY + 1, 0xFFFFFFFF, false);
                 }
             }
         }
@@ -510,7 +515,7 @@ public class ExampleModClient implements ClientModInitializer {
                 graphics.text(font, badgeText, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
             }
 
-            // 2. Also subtly highlight the target hotbar slot in the inventory screen
+            // 2. Highlight target hotbar slot in inventory screen
             if (invSlot >= 0 && invSlot <= 8 && Engine.slotNeedsUpgrade(invSlot)) {
                 int x = slot.x;
                 int y = slot.y;
@@ -541,7 +546,6 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Glass ON/OFF button
             this.addRenderableWidget(Button.builder(
                 Component.literal("Glass " + (Config.data.glassMode ? "ON" : "OFF")),
                 btn -> {
@@ -551,7 +555,6 @@ public class ExampleModClient implements ClientModInitializer {
                 }
             ).bounds(cardX + cardW - 80, cardY + 12, 70, 18).build());
 
-            // 9 Slot Buttons
             int slotStart = cardX + (cardW / 2) - 95;
             for (int i = 0; i < 9; i++) {
                 final int idx = i;
@@ -561,7 +564,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(slotStart + i * 21, cardY + 54, 19, 18).build());
             }
 
-            // Delete buttons for rules
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
             int listY = cardY + 98;
             for (int r = 0; r < Math.min(rules.size(), 3); r++) {
@@ -595,7 +597,6 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Translucent Glass Canvas
             int bg = Config.data.glassMode ? 0xB80D111A : 0xFA0D111A;
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, bg);
             graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x605B708B);
@@ -603,11 +604,9 @@ public class ExampleModClient implements ClientModInitializer {
             graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x605B708B);
             graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x605B708B);
 
-            // Title & Subtitle
             graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
             graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0xFF94A3B8, false);
 
-            // Tabs: [Complex] [Simple]
             graphics.fill(cardX + 16, cardY + 38, cardX + 75, cardY + 52, 0xFF1E293B);
             graphics.fill(cardX + 16, cardY + 51, cardX + 75, cardY + 53, 0xFF10B981);
             graphics.text(this.font, "Complex", cardX + 26, cardY + 41, 0xFFFFFFFF, false);
@@ -615,7 +614,6 @@ public class ExampleModClient implements ClientModInitializer {
             graphics.fill(cardX + 80, cardY + 38, cardX + 135, cardY + 52, 0x501E293B);
             graphics.text(this.font, "Simple", cardX + 92, cardY + 41, 0xFF64748B, false);
 
-            // Emerald Ring around Selected Hotbar Slot
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
             graphics.fill(selX - 1, cardY + 53, selX + 20, cardY + 54, 0xFF10B981);
@@ -659,14 +657,13 @@ public class ExampleModClient implements ClientModInitializer {
         private final ModernConfigScreen parent;
         private final int slotIndex;
 
-        private String currentTab = "Type"; // Specific, Type, Conditional, Empty
+        private String currentTab = "Type";
         private static final String[] CATEGORIES = {
             "Sword", "Pickaxe", "Axe", "Shovel", "Block", "Food", "Ranged / Weapons", "Utility"
         };
         private int categoryIndex = 0;
         private int variantIndex = 0;
 
-        // Specific Item Choice
         private static final String[] COMMON_SPECIFICS = {
             "minecraft:water_bucket", "minecraft:ender_pearl", "minecraft:golden_apple",
             "minecraft:totem_of_undying", "minecraft:shield", "minecraft:cobblestone",
@@ -675,7 +672,6 @@ public class ExampleModClient implements ClientModInitializer {
         private int specificPickIndex = 0;
         private boolean mustBeEnchanted = false;
 
-        // Conditional Choice
         private int ifSlot = 1;
         private int thenUseSlot = 1;
 
@@ -702,7 +698,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
             }
 
-            // CONTROLS FOR "Type"
             if ("Type".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Category: " + CATEGORIES[categoryIndex]),
@@ -724,7 +719,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
-            // CONTROLS FOR "Specific"
             if ("Specific".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Item: " + COMMON_SPECIFICS[specificPickIndex].replace("minecraft:", "")),
@@ -743,7 +737,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 140, cardY + 68, 115, 20).build());
             }
 
-            // CONTROLS FOR "Conditional"
             if ("Conditional".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("IF Slot " + ifSlot + " has item"),
@@ -762,7 +755,6 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
-            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
                 btn -> this.minecraft.setScreen(this.parent)
@@ -839,20 +831,17 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Dark Glass Panel
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xFA0D111A);
             graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x605B708B);
             graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x605B708B);
             graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x605B708B);
             graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x605B708B);
 
-            // Title & Priority Badge
             graphics.text(this.font, "Add rule", cardX + 16, cardY + 12, 0xFFFFFFFF, false);
             int rulesCount = Config.getRulesForSlot(slotIndex).size();
             graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF1E293B);
             graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xFFCBD5E1, false);
 
-            // Emerald Active Tab Underline
             String[] tabs = { "Specific", "Type", "Conditional", "Empty" };
             int tabW = (cardW - 32) / 4;
             for (int t = 0; t < tabs.length; t++) {
@@ -862,7 +851,6 @@ public class ExampleModClient implements ClientModInitializer {
                 }
             }
 
-            // Description Lines
             String[] descLines = getDescription().split("\n");
             int textY = cardY + 104;
             for (String line : descLines) {
