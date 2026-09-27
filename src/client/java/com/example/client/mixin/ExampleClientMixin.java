@@ -12,7 +12,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @Mixin(AbstractContainerScreen.class)
 public class ExampleClientMixin {
     @Inject(method = "extractSlot", at = @At("TAIL"))
-    private void onExtractSlot(GuiGraphicsExtractor graphics, Slot slot, CallbackInfo ci) {
+    private void onExtractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
         ExampleModClient.Renderer.renderContainerSlot(graphics, slot);
     }
 }
