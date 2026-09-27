@@ -16,7 +16,7 @@
       "com.autohotbar.client.AutoHotbarClient"
     ],
     "modmenu": [
-      "com.autohotbar.client.AutoHotbarClient$ModMenuIntegration"
+      "com.autohotbar.client.AutoHotbarClient"
     ]
   },
   "mixins": [

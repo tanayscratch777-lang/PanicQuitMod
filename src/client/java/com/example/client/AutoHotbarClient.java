@@ -43,7 +43,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class AutoHotbarClient implements ClientModInitializer {
+public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
         Identifier.fromNamespaceAndPath("autohotbar", "main")
     );
@@ -89,14 +89,10 @@ public class AutoHotbarClient implements ClientModInitializer {
         });
     }
 
-    // ==========================================================
-    // MODMENU INTEGRATION
-    // ==========================================================
-    public static class ModMenuIntegration implements ModMenuApi {
-        @Override
-        public ConfigScreenFactory<?> getModConfigScreenFactory() {
-            return LiquidGlassConfigScreen::new;
-        }
+    // Direct ModMenu configuration entrypoint (Zero dollar signs!)
+    @Override
+    public ConfigScreenFactory<?> getModConfigScreenFactory() {
+        return LiquidGlassConfigScreen::new;
     }
 
     // ==========================================================
@@ -107,7 +103,7 @@ public class AutoHotbarClient implements ClientModInitializer {
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type"; // Type, Specific
+            public String ruleKind = "Type";
             public String category = "Sword";
             public String variant = "Best DPS";
             public String specificId = "minecraft:water_bucket";
@@ -268,10 +264,8 @@ public class AutoHotbarClient implements ClientModInitializer {
                     }
                 }
 
-                // If candidate is found anywhere in inventory (0..35)
                 if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
-                    // If it is in MAIN INVENTORY (9..35) or wrong hotbar slot:
                     if (bestSlot != hotbarSlot) {
                         TARGET_HOTBAR_FOR_INV_SLOT[bestSlot] = hotbarSlot;
                         HOTBAR_NEEDS_UPGRADE[hotbarSlot] = true;
@@ -308,12 +302,10 @@ public class AutoHotbarClient implements ClientModInitializer {
             String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
             String enchantData = stack.has(DataComponents.ENCHANTMENTS) ? stack.get(DataComponents.ENCHANTMENTS).toString().toLowerCase() : "";
 
-            // Check Blacklisted Enchants
             for (String blacklisted : rule.blacklistedEnchants) {
                 if (enchantData.contains(blacklisted.toLowerCase())) return -1.0;
             }
 
-            // Check Required Enchants
             for (String required : rule.requiredEnchants) {
                 if (!enchantData.contains(required.toLowerCase())) return -1.0;
             }
@@ -502,10 +494,10 @@ public class AutoHotbarClient implements ClientModInitializer {
                     int slotX = hotbarX + s * 20;
                     int slotY = hotbarY;
 
-                    // Clean top accent line
+                    // Clean emerald top accent line
                     graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
 
-                    // Badge showing hotkey
+                    // Hotkey badge in corner
                     String key = Engine.getKeyName(s);
                     int textW = client.font.width(key);
                     int bW = Math.max(textW + 4, 9);
@@ -693,7 +685,6 @@ public class AutoHotbarClient implements ClientModInitializer {
         private int categoryIndex = 0;
         private int variantIndex = 0;
 
-        // Specific Item & Enchantment selections
         public String chosenItemId = "minecraft:water_bucket";
         public List<String> requiredEnchants = new ArrayList<>();
         public List<String> blacklistedEnchants = new ArrayList<>();
@@ -712,7 +703,6 @@ public class AutoHotbarClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // Only 2 clean tabs
             String[] tabs = { "Type", "Specific" };
             int tabW = (cardW - 32) / 2;
             for (int t = 0; t < tabs.length; t++) {
@@ -723,7 +713,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
             }
 
-            // CONTROLS FOR "Type"
             if ("Type".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Category: " + CATEGORIES[categoryIndex]),
@@ -743,14 +732,12 @@ public class AutoHotbarClient implements ClientModInitializer {
                     }
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
 
-                // Enchantment filter shortcut button
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Enchants (" + requiredEnchants.size() + " req, " + blacklistedEnchants.size() + " ban)"),
                     btn -> this.minecraft.setScreen(new EnchantPickerScreen(this))
                 ).bounds(cardX + 24, cardY + 92, 200, 18).build());
             }
 
-            // CONTROLS FOR "Specific"
             if ("Specific".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Pick Item... (" + formatName(chosenItemId) + ")"),
@@ -771,7 +758,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 ).bounds(cardX + 48, cardY + 86, 200, 18).build());
             }
 
-            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
                 btn -> this.minecraft.setScreen(this.parent)
@@ -865,7 +851,6 @@ public class AutoHotbarClient implements ClientModInitializer {
             graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF1E293B);
             graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xFFCBD5E1, false);
 
-            // Tab Underlines
             String[] tabs = { "Type", "Specific" };
             int tabW = (cardW - 32) / 2;
             for (int t = 0; t < tabs.length; t++) {
@@ -875,7 +860,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 }
             }
 
-            // Render Item Icon in Specific Tab
             if ("Specific".equals(currentTab)) {
                 Item item = BuiltInRegistries.ITEM.get(Identifier.tryParse(chosenItemId));
                 if (item != null && item != Items.AIR) {
@@ -895,7 +879,7 @@ public class AutoHotbarClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 6. SEARCHABLE ITEM PICKER SCREEN (WITH REAL SPRITES)
+    // 6. SEARCHABLE ITEM PICKER SCREEN (REAL ITEM SPRITES)
     // ==========================================================
     public static class ItemPickerScreen extends Screen {
         private final AddRuleScreen parent;
@@ -903,7 +887,7 @@ public class AutoHotbarClient implements ClientModInitializer {
         private final List<Item> allItems = new ArrayList<>();
         private List<Item> filteredItems = new ArrayList<>();
         private int page = 0;
-        private static final int ITEMS_PER_PAGE = 36; // 9x4 grid
+        private static final int ITEMS_PER_PAGE = 36;
         private String currentSearch = "";
 
         public ItemPickerScreen(AddRuleScreen parent) {
@@ -938,7 +922,6 @@ public class AutoHotbarClient implements ClientModInitializer {
                 btn -> this.minecraft.setScreen(this.parent)
             ).bounds(centerX - 30, this.height - 28, 60, 20).build());
 
-            // 9x4 Grid of Item Buttons
             int gridStartX = centerX - 90;
             int gridStartY = 48;
             int startIdx = page * ITEMS_PER_PAGE;
@@ -986,7 +969,6 @@ public class AutoHotbarClient implements ClientModInitializer {
             int gridStartY = 48;
             int startIdx = page * ITEMS_PER_PAGE;
 
-            // Render REAL Minecraft Item Sprites over the buttons
             for (int row = 0; row < 4; row++) {
                 for (int col = 0; col < 9; col++) {
                     int idx = startIdx + (row * 9 + col);
@@ -1072,7 +1054,7 @@ public class AutoHotbarClient implements ClientModInitializer {
         @Override
         protected void init() {
             int centerX = this.width / 2;
-            searchBox = new EditBox(this.font, centerX - 120, 25, 240, 18, Component.literal("Search"));
+            searchBox = new EditBox(this.font, centerX - 110, 25, 220, 18, Component.literal("Search"));
             searchBox.setResponder(this::updateSearch);
             this.addRenderableWidget(searchBox);
 
@@ -1083,12 +1065,12 @@ public class AutoHotbarClient implements ClientModInitializer {
                     parent.blacklistedEnchants.clear();
                     this.rebuildWidgets();
                 }
-            ).bounds(centerX - 120, this.height - 28, 80, 20).build());
+            ).bounds(centerX - 110, this.height - 28, 80, 20).build());
 
             this.addRenderableWidget(Button.builder(
                 Component.literal("Done"),
                 btn -> this.minecraft.setScreen(this.parent)
-            ).bounds(centerX + 40, this.height - 28, 80, 20).build());
+            ).bounds(centerX + 30, this.height - 28, 80, 20).build());
 
             int startY = 48;
             for (int i = 0; i < Math.min(filtered.size(), 6); i++) {
@@ -1112,7 +1094,7 @@ public class AutoHotbarClient implements ClientModInitializer {
                         }
                         this.rebuildWidgets();
                     }
-                ).bounds(centerX - 120, startY + i * 22, 240, 20).build());
+                ).bounds(centerX - 110, startY + i * 22, 220, 20).build());
             }
         }
 
