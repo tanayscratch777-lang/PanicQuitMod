@@ -46,11 +46,13 @@ public class ExampleModClient implements ClientModInitializer {
 
     public static KeyMapping toggleKey;
     public static KeyMapping openConfigKey;
+    public static KeyMapping panicKey;
 
     @Override
     public void onInitializeClient() {
         Config.load();
 
+        // 1. AutoHotbar Toggle (Default: None)
         toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.autohotbar.toggle",
             InputConstants.Type.KEYSYM,
@@ -58,6 +60,7 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
+        // 2. Open Config Screen (Default: H)
         openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.autohotbar.config",
             InputConstants.Type.KEYSYM,
@@ -65,11 +68,21 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
+        // 3. Built-in Panic Quit Key (Default: I, triggers with Left Alt)
+        panicKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+            "key.autohotbar.panic",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_I,
+            CATEGORY
+        ));
+
+        // HUD Hotbar Indicator (renders cleanly on in-game HUD while walking around)
         HudElementRegistry.addLast(
             Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
             (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
         );
 
+        // Client Tick: handles keys & farm-optimized throttled inventory evaluation
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -86,6 +99,43 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
+    // PANIC BUTTON LOGIC (INTEGRATED)
+    // ==========================================================
+    public static boolean checkPanic(int key, int scancode, int modifiers) {
+        Minecraft client = Minecraft.getInstance();
+        if (client == null || panicKey == null) return false;
+
+        boolean keyMatches = (panicKey.matches(key, scancode));
+        boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0 
+                || InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT);
+
+        if (keyMatches && altHeld) {
+            long window = client.getWindow().handle();
+            GLFW.glfwIconifyWindow(window);
+
+            if (client.level == null) {
+                System.exit(0);
+                return true;
+            }
+
+            new Thread(() -> {
+                try {
+                    if (client.getSingleplayerServer() != null) {
+                        client.getSingleplayerServer().halt(false);
+                    }
+                } catch (Exception ignored) {
+                } finally {
+                    System.exit(0);
+                }
+            }, "PanicQuit-Thread").start();
+
+            return true;
+        }
+
+        return false;
+    }
+
+    // ==========================================================
     // 1. CONFIGURATION SYSTEM
     // ==========================================================
     public static class Config {
@@ -93,10 +143,11 @@ public class ExampleModClient implements ClientModInitializer {
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type";
+            public String ruleKind = "Type"; // Type, Specific, Conditional, Empty
             public String category = "Sword";
-            public String variant = "Best";
+            public String variant = "Best DPS";
             public String specificId = "";
+            public boolean mustBeEnchanted = false;
 
             public Rule(String ruleKind, String category, String variant, String specificId) {
                 this.ruleKind = ruleKind;
@@ -107,7 +158,11 @@ public class ExampleModClient implements ClientModInitializer {
 
             public String getDisplayText() {
                 if ("Empty".equalsIgnoreCase(ruleKind)) return "Leave Slot Empty (Stop Rule)";
-                if ("Specific".equalsIgnoreCase(ruleKind)) return "Item: " + (specificId.isEmpty() ? "None" : specificId);
+                if ("Specific".equalsIgnoreCase(ruleKind)) {
+                    String base = "Item: " + (specificId.isEmpty() ? "None" : specificId);
+                    return mustBeEnchanted ? base + " (Enchanted)" : base;
+                }
+                if ("Conditional".equalsIgnoreCase(ruleKind)) return "Conditional Rule";
                 return category + " (" + variant + ")";
             }
         }
@@ -121,15 +176,16 @@ public class ExampleModClient implements ClientModInitializer {
                 for (int i = 0; i < 9; i++) {
                     slots.add(new ArrayList<>());
                 }
-                slots.get(0).add(new Rule("Type", "Sword", "Best", ""));
-                slots.get(1).add(new Rule("Type", "Pickaxe", "Best", ""));
-                slots.get(2).add(new Rule("Type", "Axe", "Best", ""));
-                slots.get(3).add(new Rule("Type", "Shovel", "Best", ""));
-                slots.get(4).add(new Rule("Type", "Torches", "Best", ""));
+                // Default setup
+                slots.get(0).add(new Rule("Type", "Sword", "Best DPS", ""));
+                slots.get(1).add(new Rule("Type", "Pickaxe", "Best Tier", ""));
+                slots.get(2).add(new Rule("Type", "Axe", "Best Weapon", ""));
+                slots.get(3).add(new Rule("Type", "Shovel", "Best Tier", ""));
+                slots.get(4).add(new Rule("Type", "Utility", "Torches", ""));
                 slots.get(5).add(new Rule("Type", "Block", "Hardest", ""));
                 slots.get(6).add(new Rule("Type", "Block", "Most Count", ""));
-                slots.get(7).add(new Rule("Type", "Food", "Best", ""));
-                slots.get(8).add(new Rule("Type", "Water Bucket", "Best", ""));
+                slots.get(7).add(new Rule("Type", "Food", "Best Saturation", ""));
+                slots.get(8).add(new Rule("Type", "Utility", "Water Bucket", ""));
             }
         }
 
@@ -182,7 +238,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 2. ENGINE (NO FALSE ALERTS)
+    // 2. ENGINE (FARM OPTIMIZED, NO GHOST MARKS)
     // ==========================================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -198,7 +254,7 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             tickCounter++;
-            if (tickCounter % 4 != 0) return;
+            if (tickCounter % 4 != 0) return; // Evaluates at most 4x a second
 
             Inventory inv = client.player.getInventory();
             int hash = 1;
@@ -226,7 +282,7 @@ public class ExampleModClient implements ClientModInitializer {
 
                 for (Config.Rule rule : rules) {
                     if ("Empty".equalsIgnoreCase(rule.ruleKind)) {
-                        bestSlot = -2;
+                        bestSlot = -2; // Stop rule: slot remains empty
                         break;
                     }
 
@@ -251,13 +307,11 @@ public class ExampleModClient implements ClientModInitializer {
                     }
                 }
 
-                // ONLY trigger if an item exists AND is not already in the hotbar slot!
+                // ONLY trigger upgrade if an item is found AND is not already in the hotbar slot!
                 if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
                     if (bestSlot != hotbarSlot) {
-                        if (bestSlot >= 9 && bestSlot <= 35) {
-                            TARGET_HOTBAR_FOR_INV_SLOT[bestSlot] = hotbarSlot;
-                        }
+                        TARGET_HOTBAR_FOR_INV_SLOT[bestSlot] = hotbarSlot;
                         HOTBAR_NEEDS_UPGRADE[hotbarSlot] = true;
                     }
                 }
@@ -292,59 +346,90 @@ public class ExampleModClient implements ClientModInitializer {
             String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
 
             if ("Specific".equalsIgnoreCase(rule.ruleKind)) {
-                if (itemId.equalsIgnoreCase(rule.specificId)) return 100.0 + stack.getCount();
-                return -1.0;
+                if (!itemId.equalsIgnoreCase(rule.specificId)) return -1.0;
+                if (rule.mustBeEnchanted && !stack.isEnchanted()) return -1.0;
+                return 100.0 + stack.getCount();
             }
 
             switch (rule.category) {
                 case "Sword":
-                    if (stack.is(ItemTags.SWORDS) || itemId.contains("sword") || itemId.contains("mace")) {
-                        return getTier(itemId) * 10.0 + stack.getCount();
+                    if (stack.is(ItemTags.SWORDS) || itemId.contains("sword")) {
+                        double tier = getTier(itemId);
+                        if ("Netherite Only".equals(rule.variant) && tier < 6.0) return -1.0;
+                        if ("Diamond+".equals(rule.variant) && tier < 5.0) return -1.0;
+                        return tier * 10.0 + stack.getCount();
                     }
                     return -1.0;
+
                 case "Pickaxe":
                     if (stack.is(ItemTags.PICKAXES) || itemId.contains("pickaxe")) {
-                        return getTier(itemId) * 10.0 + stack.getCount();
+                        double s = getTier(itemId) * 10.0;
+                        if ("Silk Touch Preferred".equals(rule.variant) && stack.isEnchanted()) s += 15.0;
+                        if ("Fortune Preferred".equals(rule.variant) && stack.isEnchanted()) s += 15.0;
+                        return s + stack.getCount();
                     }
                     return -1.0;
+
                 case "Axe":
                     if (stack.is(ItemTags.AXES) || (itemId.contains("axe") && !itemId.contains("pickaxe"))) {
                         return getTier(itemId) * 10.0 + stack.getCount();
                     }
                     return -1.0;
+
                 case "Shovel":
                     if (stack.is(ItemTags.SHOVELS) || itemId.contains("shovel")) {
                         return getTier(itemId) * 10.0 + stack.getCount();
                     }
                     return -1.0;
+
                 case "Block":
                     if (item instanceof BlockItem blockItem && !itemId.contains("torch")) {
                         if ("Hardest".equalsIgnoreCase(rule.variant)) {
                             Block block = blockItem.getBlock();
                             float destroySpeed = block.defaultBlockState().getDestroySpeed(null, null);
                             return (destroySpeed > 0 ? destroySpeed * 10.0 : 5.0) + (stack.getCount() * 0.05);
+                        } else if ("Soft Utility".equalsIgnoreCase(rule.variant)) {
+                            if (itemId.contains("dirt") || itemId.contains("cobble") || itemId.contains("netherrack")) {
+                                return 50.0 + stack.getCount();
+                            }
+                            return 1.0;
                         } else {
+                            // "Most Count"
                             return stack.getCount();
                         }
                     }
                     return -1.0;
+
                 case "Food":
                     if (stack.has(DataComponents.FOOD)) {
                         FoodProperties food = stack.get(DataComponents.FOOD);
                         if (food != null) {
+                            if ("Fast Eating".equals(rule.variant) && (itemId.contains("kelp") || itemId.contains("berry"))) {
+                                return 50.0 + stack.getCount();
+                            }
                             return food.nutrition() * 2.0 + food.saturation() + (stack.getCount() * 0.01);
                         }
                         return 10.0 + stack.getCount();
                     }
                     return -1.0;
-                case "Torches":
-                    if (itemId.contains("torch") || itemId.contains("lantern")) return 50.0 + stack.getCount();
+
+                case "Ranged / Weapons":
+                    if (rule.variant.equalsIgnoreCase("Bow") && itemId.contains("bow") && !itemId.contains("crossbow")) return 50.0;
+                    if (rule.variant.equalsIgnoreCase("Crossbow") && itemId.contains("crossbow")) return 50.0;
+                    if (rule.variant.equalsIgnoreCase("Trident") && itemId.contains("trident")) return 50.0;
+                    if (rule.variant.equalsIgnoreCase("Mace") && itemId.contains("mace")) return 50.0;
                     return -1.0;
-                case "Water Bucket":
-                    if (itemId.equals("minecraft:water_bucket") || itemId.equals("minecraft:ender_pearl") || itemId.equals("minecraft:totem_of_undying")) {
-                        return 50.0 + stack.getCount();
-                    }
+
+                case "Utility":
+                    if (rule.variant.equalsIgnoreCase("Torches") && (itemId.contains("torch") || itemId.contains("lantern"))) return 50.0 + stack.getCount();
+                    if (rule.variant.equalsIgnoreCase("Water Bucket") && itemId.equals("minecraft:water_bucket")) return 100.0;
+                    if (rule.variant.equalsIgnoreCase("Ender Pearl") && itemId.equals("minecraft:ender_pearl")) return 50.0 + stack.getCount();
+                    if (rule.variant.equalsIgnoreCase("Golden Apple") && itemId.contains("golden_apple")) return 50.0 + stack.getCount();
+                    if (rule.variant.equalsIgnoreCase("Totem of Undying") && itemId.equals("minecraft:totem_of_undying")) return 100.0;
+                    if (rule.variant.equalsIgnoreCase("Shield") && itemId.equals("minecraft:shield")) return 50.0;
+                    if (rule.variant.equalsIgnoreCase("Firework Rocket") && itemId.equals("minecraft:firework_rocket")) return 50.0 + stack.getCount();
                     return -1.0;
+
                 default:
                     return -1.0;
             }
@@ -365,9 +450,9 @@ public class ExampleModClient implements ClientModInitializer {
     // 3. CLEAN RENDERER (VULKAN & SODIUM PROOF)
     // ==========================================================
     public static class Renderer {
-        public static final int EMERALD_GREEN = 0xFF2ECC71;
-        public static final int EMERALD_TINT = 0x352ECC71;
-        public static final int BADGE_BG = 0xEE1A1A1A;
+        public static final int EMERALD_GREEN = 0xFF10B981;
+        public static final int EMERALD_TINT = 0x3510B981;
+        public static final int BADGE_BG = 0xEE111827;
 
         public static void renderHudHotbar(GuiGraphicsExtractor graphics) {
             if (!Config.isEnabled()) return;
@@ -383,8 +468,9 @@ public class ExampleModClient implements ClientModInitializer {
                     int x = hotbarX + s * 20 + 3;
                     int y = hotbarY + 3;
 
-                    // Clean 2-pixel emerald dot in the corner
-                    graphics.fill(x + 12, y + 1, x + 15, y + 4, EMERALD_GREEN);
+                    // Clean emerald top notch & corner accent
+                    graphics.fill(x + 1, y - 2, x + 15, y, EMERALD_GREEN);
+                    graphics.fill(x + 11, y - 1, x + 15, y + 3, EMERALD_GREEN);
                 }
             }
         }
@@ -397,10 +483,10 @@ public class ExampleModClient implements ClientModInitializer {
             if (!(slot.container instanceof Inventory)) return;
 
             int invSlot = slot.getContainerSlot();
-            if (invSlot < 9 || invSlot > 35) return;
 
+            // 1. Highlight source item in main inventory
             int targetHotbarSlot = Engine.getTargetHotbarSlot(invSlot);
-            if (targetHotbarSlot >= 0 && targetHotbarSlot < 9) {
+            if (invSlot >= 9 && invSlot <= 35 && targetHotbarSlot >= 0 && targetHotbarSlot < 9) {
                 int x = slot.x;
                 int y = slot.y;
 
@@ -412,21 +498,32 @@ public class ExampleModClient implements ClientModInitializer {
 
                 String keyName = Engine.getKeyName(targetHotbarSlot);
                 Font font = client.font;
-                int textW = font.width(keyName);
-                int badgeW = Math.max(textW + 4, 9);
+                String badgeText = "->" + keyName;
+                int textW = font.width(badgeText);
+                int badgeW = Math.max(textW + 4, 14);
                 int badgeH = 8;
                 int badgeX = x + 8 - (badgeW / 2);
                 int badgeY = y - 4;
 
                 graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, BADGE_BG);
                 graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 1, EMERALD_GREEN);
-                graphics.text(font, keyName, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
+                graphics.text(font, badgeText, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
+            }
+
+            // 2. Also subtly highlight the target hotbar slot in the inventory screen
+            if (invSlot >= 0 && invSlot <= 8 && Engine.slotNeedsUpgrade(invSlot)) {
+                int x = slot.x;
+                int y = slot.y;
+                graphics.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
+                graphics.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
+                graphics.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
+                graphics.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
             }
         }
     }
 
     // ==========================================================
-    // 4. MAIN CONFIG SCREEN (OPAQUE & READABLE)
+    // 4. MAIN MODERN GLASS CONFIG SCREEN
     // ==========================================================
     public static class ModernConfigScreen extends Screen {
         private final Screen parent;
@@ -444,6 +541,7 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
+            // Glass ON/OFF button
             this.addRenderableWidget(Button.builder(
                 Component.literal("Glass " + (Config.data.glassMode ? "ON" : "OFF")),
                 btn -> {
@@ -453,6 +551,7 @@ public class ExampleModClient implements ClientModInitializer {
                 }
             ).bounds(cardX + cardW - 80, cardY + 12, 70, 18).build());
 
+            // 9 Slot Buttons
             int slotStart = cardX + (cardW / 2) - 95;
             for (int i = 0; i < 9; i++) {
                 final int idx = i;
@@ -462,6 +561,7 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(slotStart + i * 21, cardY + 54, 19, 18).build());
             }
 
+            // Delete buttons for rules
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
             int listY = cardY + 98;
             for (int r = 0; r < Math.min(rules.size(), 3); r++) {
@@ -495,48 +595,50 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            // DRAW BACKGROUND BEFORE SUPER SO WIDGETS STAY FULLY VISIBLE!
-            int bg = Config.data.glassMode ? 0xE8141B26 : 0xFF141B26;
+            // Translucent Glass Canvas
+            int bg = Config.data.glassMode ? 0xB80D111A : 0xFA0D111A;
             graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, bg);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF35445A);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF35445A);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF35445A);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF35445A);
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x605B708B);
+            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x605B708B);
+            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x605B708B);
+            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x605B708B);
 
-            // BRIGHT WHITE AND LIGHT BLUE TEXT
+            // Title & Subtitle
             graphics.text(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
-            graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0xFFA0B4C8, false);
+            graphics.text(this.font, "Keybind opens inventory with hotbar-key labels — no auto swaps.", cardX + 16, cardY + 26, 0xFF94A3B8, false);
 
-            graphics.fill(cardX + 16, cardY + 38, cardX + 75, cardY + 52, 0xFF242F42);
-            graphics.fill(cardX + 16, cardY + 51, cardX + 75, cardY + 53, 0xFF2ECC71);
+            // Tabs: [Complex] [Simple]
+            graphics.fill(cardX + 16, cardY + 38, cardX + 75, cardY + 52, 0xFF1E293B);
+            graphics.fill(cardX + 16, cardY + 51, cardX + 75, cardY + 53, 0xFF10B981);
             graphics.text(this.font, "Complex", cardX + 26, cardY + 41, 0xFFFFFFFF, false);
 
-            graphics.fill(cardX + 80, cardY + 38, cardX + 135, cardY + 52, 0xFF1B2230);
-            graphics.text(this.font, "Simple", cardX + 92, cardY + 41, 0xFF708090, false);
+            graphics.fill(cardX + 80, cardY + 38, cardX + 135, cardY + 52, 0x501E293B);
+            graphics.text(this.font, "Simple", cardX + 92, cardY + 41, 0xFF64748B, false);
 
+            // Emerald Ring around Selected Hotbar Slot
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
-            graphics.fill(selX - 1, cardY + 53, selX + 20, cardY + 54, 0xFF2ECC71);
-            graphics.fill(selX - 1, cardY + 72, selX + 20, cardY + 73, 0xFF2ECC71);
-            graphics.fill(selX - 1, cardY + 53, selX, cardY + 73, 0xFF2ECC71);
-            graphics.fill(selX + 19, cardY + 53, selX + 20, cardY + 73, 0xFF2ECC71);
+            graphics.fill(selX - 1, cardY + 53, selX + 20, cardY + 54, 0xFF10B981);
+            graphics.fill(selX - 1, cardY + 72, selX + 20, cardY + 73, 0xFF10B981);
+            graphics.fill(selX - 1, cardY + 53, selX, cardY + 73, 0xFF10B981);
+            graphics.fill(selX + 19, cardY + 53, selX + 20, cardY + 73, 0xFF10B981);
 
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
-            graphics.text(this.font, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 80, 0xFFA0B4C8, false);
+            graphics.text(this.font, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 80, 0xFF94A3B8, false);
 
             int boxY = cardY + 92;
             int boxH = cardH - 134;
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0xFF0D121B);
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0xFF283446);
+            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0x90080B12);
+            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0x50334155);
 
             if (rules.isEmpty()) {
-                graphics.text(this.font, "No rules — click \"+ Add rule\" to start", cardX + (cardW / 2) - 80, boxY + 28, 0xFF708090, false);
+                graphics.text(this.font, "No rules — click \"+ Add rule\" to start", cardX + (cardW / 2) - 80, boxY + 28, 0xFF64748B, false);
             } else {
                 for (int r = 0; r < Math.min(rules.size(), 3); r++) {
                     Config.Rule rule = rules.get(r);
                     int rY = boxY + 6 + (r * 22);
-                    graphics.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xFF1C2534);
-                    graphics.text(this.font, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xFFFFFFFF, false);
+                    graphics.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xAA1E293B);
+                    graphics.text(this.font, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xFFF1F5F9, false);
                 }
             }
 
@@ -551,16 +653,31 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 5. ADD RULE MODAL (OPAQUE & READABLE)
+    // 5. ALL CATEGORIES & VARIANTS "ADD RULE" SCREEN
     // ==========================================================
     public static class AddRuleScreen extends Screen {
         private final ModernConfigScreen parent;
         private final int slotIndex;
 
-        private String currentTab = "Type";
-        private static final String[] CATEGORIES = { "Sword", "Pickaxe", "Axe", "Shovel", "Block", "Food", "Torches", "Water Bucket" };
+        private String currentTab = "Type"; // Specific, Type, Conditional, Empty
+        private static final String[] CATEGORIES = {
+            "Sword", "Pickaxe", "Axe", "Shovel", "Block", "Food", "Ranged / Weapons", "Utility"
+        };
         private int categoryIndex = 0;
         private int variantIndex = 0;
+
+        // Specific Item Choice
+        private static final String[] COMMON_SPECIFICS = {
+            "minecraft:water_bucket", "minecraft:ender_pearl", "minecraft:golden_apple",
+            "minecraft:totem_of_undying", "minecraft:shield", "minecraft:cobblestone",
+            "minecraft:firework_rocket", "minecraft:torch"
+        };
+        private int specificPickIndex = 0;
+        private boolean mustBeEnchanted = false;
+
+        // Conditional Choice
+        private int ifSlot = 1;
+        private int thenUseSlot = 1;
 
         public AddRuleScreen(ModernConfigScreen parent, int slotIndex) {
             super(Component.literal("Add rule"));
@@ -585,6 +702,7 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
             }
 
+            // CONTROLS FOR "Type"
             if ("Type".equals(currentTab)) {
                 this.addRenderableWidget(Button.builder(
                     Component.literal("Category: " + CATEGORIES[categoryIndex]),
@@ -606,6 +724,45 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }
 
+            // CONTROLS FOR "Specific"
+            if ("Specific".equals(currentTab)) {
+                this.addRenderableWidget(Button.builder(
+                    Component.literal("Item: " + COMMON_SPECIFICS[specificPickIndex].replace("minecraft:", "")),
+                    btn -> {
+                        specificPickIndex = (specificPickIndex + 1) % COMMON_SPECIFICS.length;
+                        btn.setMessage(Component.literal("Item: " + COMMON_SPECIFICS[specificPickIndex].replace("minecraft:", "")));
+                    }
+                ).bounds(cardX + 24, cardY + 68, 200, 20).build());
+
+                this.addRenderableWidget(Button.builder(
+                    Component.literal("Enchanted: " + (mustBeEnchanted ? "YES" : "NO")),
+                    btn -> {
+                        mustBeEnchanted = !mustBeEnchanted;
+                        btn.setMessage(Component.literal("Enchanted: " + (mustBeEnchanted ? "YES" : "NO")));
+                    }
+                ).bounds(cardX + cardW - 140, cardY + 68, 115, 20).build());
+            }
+
+            // CONTROLS FOR "Conditional"
+            if ("Conditional".equals(currentTab)) {
+                this.addRenderableWidget(Button.builder(
+                    Component.literal("IF Slot " + ifSlot + " has item"),
+                    btn -> {
+                        ifSlot = (ifSlot % 9) + 1;
+                        btn.setMessage(Component.literal("IF Slot " + ifSlot + " has item"));
+                    }
+                ).bounds(cardX + 24, cardY + 68, 175, 20).build());
+
+                this.addRenderableWidget(Button.builder(
+                    Component.literal("THEN mirror Slot " + thenUseSlot),
+                    btn -> {
+                        thenUseSlot = (thenUseSlot % 9) + 1;
+                        btn.setMessage(Component.literal("THEN mirror Slot " + thenUseSlot));
+                    }
+                ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
+            }
+
+            // Bottom Buttons
             this.addRenderableWidget(Button.builder(
                 Component.literal("Cancel"),
                 btn -> this.minecraft.setScreen(this.parent)
@@ -618,6 +775,10 @@ public class ExampleModClient implements ClientModInitializer {
                         String cat = CATEGORIES[categoryIndex];
                         String var = getVariants(cat)[variantIndex % getVariants(cat).length];
                         Config.addRule(slotIndex, new Config.Rule("Type", cat, var, ""));
+                    } else if ("Specific".equals(currentTab)) {
+                        Config.Rule r = new Config.Rule("Specific", "", "", COMMON_SPECIFICS[specificPickIndex]);
+                        r.mustBeEnchanted = this.mustBeEnchanted;
+                        Config.addRule(slotIndex, r);
                     } else if ("Empty".equals(currentTab)) {
                         Config.addRule(slotIndex, new Config.Rule("Empty", "", "", ""));
                     }
@@ -627,24 +788,48 @@ public class ExampleModClient implements ClientModInitializer {
         }
 
         private String[] getVariants(String category) {
-            if ("Block".equals(category)) return new String[]{ "Hardest", "Most Count" };
-            return new String[]{ "Best" };
+            return switch (category) {
+                case "Sword" -> new String[]{ "Best DPS", "Fastest Attack", "Most Durable", "Netherite Only", "Diamond+" };
+                case "Pickaxe" -> new String[]{ "Best Tier", "Most Durable", "Silk Touch Preferred", "Fortune Preferred" };
+                case "Axe" -> new String[]{ "Best Weapon", "Best Tool" };
+                case "Shovel" -> new String[]{ "Best Tier", "Silk Touch Preferred" };
+                case "Block" -> new String[]{ "Hardest", "Most Count", "Soft Utility" };
+                case "Food" -> new String[]{ "Best Saturation", "Highest Nutrition", "Fast Eating" };
+                case "Ranged / Weapons" -> new String[]{ "Bow", "Crossbow", "Trident", "Mace" };
+                case "Utility" -> new String[]{ "Torches", "Water Bucket", "Ender Pearl", "Golden Apple", "Totem of Undying", "Shield", "Firework Rocket" };
+                default -> new String[]{ "Best" };
+            };
         }
 
         private String getDescription() {
             if ("Empty".equals(currentTab)) {
                 return "Stop rule\nThis slot will be left empty and no later rules will be tried.\nPlace this rule below specific/type rules to short-circuit.";
             }
-            if ("Specific".equals(currentTab)) return "Pick an exact item ID with required enchantments.";
-            if ("Conditional".equals(currentTab)) return "Branch on whether another rule found an item.";
+            if ("Specific".equals(currentTab)) {
+                return "Pick an exact item ID.\nItem will be prioritized for this slot regardless of category.";
+            }
+            if ("Conditional".equals(currentTab)) {
+                return "Branch on whether another rule found an item.\nUseful for dynamic hotbars (e.g. Shield if holding 1-handed weapon).";
+            }
 
             String cat = CATEGORIES[categoryIndex];
             String var = getVariants(cat)[variantIndex % getVariants(cat).length];
-            if ("Block".equals(cat) && "Hardest".equals(var)) return "Pick a category and the variant rule.\nBlock with the highest hardness value.";
-            if ("Block".equals(cat) && "Most Count".equals(var)) return "Pick a category and the variant rule.\nBlock with the largest quantity stack in your bag.";
-            if ("Sword".equals(cat)) return "Pick a category and the variant rule.\nHighest expected damage / DPS in this category.";
-            if ("Food".equals(cat)) return "Pick a category and the variant rule.\nHighest nutritional and saturation value.";
-            return "Pick a category and the variant rule.\nOptimal choice in this category.";
+
+            if ("Block".equals(cat)) {
+                if ("Hardest".equals(var)) return "Block with highest blast resistance and hardness (Obsidian, Deepslate, Stone).";
+                if ("Most Count".equals(var)) return "Block with the largest quantity stack in your bag.";
+                return "Soft utility blocks like dirt, netherrack, cobblestone for pillaring.";
+            }
+            if ("Sword".equals(cat)) {
+                if ("Best DPS".equals(var)) return "Highest expected damage and weapon tier.";
+                if ("Fastest Attack".equals(var)) return "Sword with maximum attack speed recovery.";
+                return "Swords filtered by durability or tier constraints.";
+            }
+            if ("Food".equals(cat)) {
+                if ("Best Saturation".equals(var)) return "Foods that keep hunger full longest (Golden Carrot, Steak, Porkchop).";
+                return "Highest nutritional restoration or fast-eating items.";
+            }
+            return "Optimal items in the " + cat + " category filtered by " + var + ".";
         }
 
         @Override
@@ -654,30 +839,34 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xFF141B26);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0xFF35445A);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0xFF35445A);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0xFF35445A);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0xFF35445A);
+            // Dark Glass Panel
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xFA0D111A);
+            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x605B708B);
+            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x605B708B);
+            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x605B708B);
+            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x605B708B);
 
+            // Title & Priority Badge
             graphics.text(this.font, "Add rule", cardX + 16, cardY + 12, 0xFFFFFFFF, false);
             int rulesCount = Config.getRulesForSlot(slotIndex).size();
-            graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF242F42);
-            graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xFFDDDDDD, false);
+            graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF1E293B);
+            graphics.text(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 11, 0xFFCBD5E1, false);
 
+            // Emerald Active Tab Underline
             String[] tabs = { "Specific", "Type", "Conditional", "Empty" };
             int tabW = (cardW - 32) / 4;
             for (int t = 0; t < tabs.length; t++) {
                 if (tabs[t].equals(currentTab)) {
                     int tX = cardX + 16 + t * tabW;
-                    graphics.fill(tX, cardY + 44, tX + tabW - 4, cardY + 46, 0xFF2ECC71);
+                    graphics.fill(tX, cardY + 44, tX + tabW - 4, cardY + 46, 0xFF10B981);
                 }
             }
 
+            // Description Lines
             String[] descLines = getDescription().split("\n");
             int textY = cardY + 104;
             for (String line : descLines) {
-                graphics.text(this.font, line, cardX + 24, textY, 0xFFA0B4C8, false);
+                graphics.text(this.font, line, cardX + 24, textY, 0xFF94A3B8, false);
                 textY += 12;
             }
 
