@@ -6,14 +6,15 @@ import com.mojang.blaze3d.platform.InputConstants;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
 import net.fabricmc.loader.api.FabricLoader;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.component.DataComponentTypes;
+import net.minecraft.core.component.DataComponents;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
@@ -42,7 +43,6 @@ public class ExampleModClient implements ClientModInitializer {
         Identifier.fromNamespaceAndPath("autohotbar", "main")
     );
 
-    // Toggle key defaults to NONE (unbound)
     public static KeyMapping toggleKey;
     public static KeyMapping openConfigKey;
 
@@ -64,7 +64,13 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // Optimized Tick Loop (Only evaluates when inventory actually changes!)
+        // Native 26.1 HUD Element - Renders hotbar upgrade alerts on-screen while walking around!
+        HudElementRegistry.addLast(
+            Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
+            (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
+        );
+
+        // Farm & Raid Optimized Tick loop: only runs when items actually change
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -81,14 +87,14 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================
-    // 1. CONFIGURATION SYSTEM
+    // 1. CONFIGURATION
     // ==========================================
     public static class Config {
         private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class SlotRule {
-            public String category; // SWORD, PICKAXE, AXE, SHOVEL, HOE, FOOD, BLOCK, TORCH, WATER_BUCKET, EMPTY
+            public String category;
             public String specificId;
 
             public SlotRule(String category, String specificId) {
@@ -102,7 +108,6 @@ public class ExampleModClient implements ClientModInitializer {
             public List<SlotRule> slotRules = new ArrayList<>();
 
             public Data() {
-                // Default 9 hotbar slot rules
                 slotRules.add(new SlotRule("SWORD", ""));
                 slotRules.add(new SlotRule("PICKAXE", ""));
                 slotRules.add(new SlotRule("AXE", ""));
@@ -160,7 +165,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================
-    // 2. OPTIMIZED ENGINE (FARM SAFE)
+    // 2. ENGINE (FARM OPTIMIZED)
     // ==========================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -176,7 +181,7 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             tickCounter++;
-            if (tickCounter % 4 != 0) return; // Evaluates at most 4x a second
+            if (tickCounter % 4 != 0) return;
 
             Inventory inv = client.player.getInventory();
             int hash = 1;
@@ -185,7 +190,7 @@ public class ExampleModClient implements ClientModInitializer {
                 hash = 31 * hash + s.getItem().hashCode() + s.getCount();
             }
 
-            if (hash == lastInventoryHash) return; // Nothing changed, skip!
+            if (hash == lastInventoryHash) return;
             lastInventoryHash = hash;
 
             evaluate(inv);
@@ -293,8 +298,8 @@ public class ExampleModClient implements ClientModInitializer {
                     }
                     return -1.0;
                 case "FOOD":
-                    if (stack.has(DataComponentTypes.FOOD)) {
-                        FoodProperties food = stack.get(DataComponentTypes.FOOD);
+                    if (stack.has(DataComponents.FOOD)) {
+                        FoodProperties food = stack.get(DataComponents.FOOD);
                         if (food != null) {
                             return food.nutrition() * 2.0 + food.saturation() + (stack.getCount() * 0.01);
                         }
@@ -334,35 +339,30 @@ public class ExampleModClient implements ClientModInitializer {
     // 3. VULKAN & SODIUM SAFE RENDERER
     // ==========================================
     public static class Renderer {
-        public static void renderHudHotbar(GuiGraphics guiGraphics) {
+        public static void renderHudHotbar(GuiGraphicsExtractor graphics) {
             if (!Config.isEnabled()) return;
             Minecraft client = Minecraft.getInstance();
             if (client.player == null) return;
 
-            int midX = guiGraphics.guiWidth() / 2;
+            int midX = graphics.guiWidth() / 2;
             int hotbarX = midX - 90;
-            int hotbarY = guiGraphics.guiHeight() - 22;
+            int hotbarY = graphics.guiHeight() - 22;
 
             for (int s = 0; s < 9; s++) {
                 if (Engine.slotNeedsUpgrade(s)) {
                     int x = hotbarX + s * 20 + 2;
                     int y = hotbarY + 3;
 
-                    guiGraphics.pose().pushPose();
-                    guiGraphics.pose().translate(0.0F, 0.0F, 300.0F);
-
-                    guiGraphics.fill(x, y - 2, x + 16, y, 0xFF00FF88);
-                    guiGraphics.fill(x - 1, y - 2, x, y + 16, 0x8800FF88);
-                    guiGraphics.fill(x + 16, y - 2, x + 17, y + 16, 0x8800FF88);
-                    guiGraphics.fill(x - 1, y + 16, x + 17, y + 17, 0x8800FF88);
-                    guiGraphics.fill(x + 12, y - 1, x + 15, y + 2, 0xFF00FF88);
-
-                    guiGraphics.pose().popPose();
+                    graphics.fill(x, y - 2, x + 16, y, 0xFF00FF88);
+                    graphics.fill(x - 1, y - 2, x, y + 16, 0x8800FF88);
+                    graphics.fill(x + 16, y - 2, x + 17, y + 16, 0x8800FF88);
+                    graphics.fill(x - 1, y + 16, x + 17, y + 17, 0x8800FF88);
+                    graphics.fill(x + 12, y - 1, x + 15, y + 2, 0xFF00FF88);
                 }
             }
         }
 
-        public static void renderContainerSlot(GuiGraphics guiGraphics, Slot slot) {
+        public static void renderContainerSlot(GuiGraphicsExtractor graphics, Slot slot) {
             if (!Config.isEnabled()) return;
             Minecraft client = Minecraft.getInstance();
             if (client.player == null) return;
@@ -377,14 +377,11 @@ public class ExampleModClient implements ClientModInitializer {
                 int x = slot.x;
                 int y = slot.y;
 
-                guiGraphics.pose().pushPose();
-                guiGraphics.pose().translate(0.0F, 0.0F, 300.0F);
-
-                guiGraphics.fill(x, y, x + 16, y + 1, 0xFF00FF88);
-                guiGraphics.fill(x, y + 15, x + 16, y + 16, 0xFF00FF88);
-                guiGraphics.fill(x, y + 1, x + 1, y + 15, 0xFF00FF88);
-                guiGraphics.fill(x + 15, y + 1, x + 16, y + 15, 0xFF00FF88);
-                guiGraphics.fill(x + 1, y + 1, x + 15, y + 15, 0x3300FF88);
+                graphics.fill(x, y, x + 16, y + 1, 0xFF00FF88);
+                graphics.fill(x, y + 15, x + 16, y + 16, 0xFF00FF88);
+                graphics.fill(x, y + 1, x + 1, y + 15, 0xFF00FF88);
+                graphics.fill(x + 15, y + 1, x + 16, y + 15, 0xFF00FF88);
+                graphics.fill(x + 1, y + 1, x + 15, y + 15, 0x3300FF88);
 
                 String keyName = Engine.getKeyName(targetHotbarSlot);
                 Font font = client.font;
@@ -392,17 +389,15 @@ public class ExampleModClient implements ClientModInitializer {
                 int badgeW = Math.max(textWidth + 3, 8);
                 int badgeH = 9;
 
-                guiGraphics.fill(x - 1, y - 1, x + badgeW, y + badgeH, 0xEE000000);
-                guiGraphics.fill(x - 1, y - 1, x + badgeW, y, 0xFF00FF88);
-                guiGraphics.drawString(font, keyName, x + 1, y, 0xFFFFFFFF, false);
-
-                guiGraphics.pose().popPose();
+                graphics.fill(x - 1, y - 1, x + badgeW, y + badgeH, 0xEE000000);
+                graphics.fill(x - 1, y - 1, x + badgeW, y, 0xFF00FF88);
+                graphics.text(font, keyName, x + 1, y, 0xFFFFFFFF, false);
             }
         }
     }
 
     // ==========================================
-    // 4. IN-GAME CONFIG SCREEN
+    // 4. CONFIG SCREEN
     // ==========================================
     public static class ConfigScreen extends Screen {
         private final Screen parent;
@@ -461,24 +456,23 @@ public class ExampleModClient implements ClientModInitializer {
         }
 
         @Override
-        public void render(GuiGraphics guiGraphics, int mouseX, int mouseY, float partialTick) {
-            this.renderBackground(guiGraphics, mouseX, mouseY, partialTick);
+        public void extractRenderState(GuiGraphicsExtractor graphics, int mouseX, int mouseY, float delta) {
+            super.extractRenderState(graphics, mouseX, mouseY, delta);
 
-            int centerX = this.width / 2;
-            guiGraphics.drawCenteredString(this.font, "AutoHotbar Fairplay - Configuration", centerX, 15, 0xFFFFFF);
+            int centerX = graphics.guiWidth() / 2;
+            String title = "AutoHotbar Fairplay - Configuration";
+            graphics.text(this.font, title, centerX - this.font.width(title) / 2, 15, 0xFFFFFF, false);
 
             String currentInfo = "Selected Slot " + (selectedSlot + 1) + ": " + Config.getRule(selectedSlot).category;
-            guiGraphics.drawCenteredString(this.font, currentInfo, centerX, 100, 0x00FF88);
+            graphics.text(this.font, currentInfo, centerX - this.font.width(currentInfo) / 2, 100, 0x00FF88, false);
 
             int slotStartX = centerX - 90;
             int selX = slotStartX + selectedSlot * 20;
             int selY = 60;
-            guiGraphics.fill(selX - 1, selY - 1, selX + 19, selY, 0xFF00FF88);
-            guiGraphics.fill(selX - 1, selY + 20, selX + 19, selY + 21, 0xFF00FF88);
-            guiGraphics.fill(selX - 1, selY, selX, selY + 20, 0xFF00FF88);
-            guiGraphics.fill(selX + 18, selY, selX + 19, selY + 20, 0xFF00FF88);
-
-            super.render(guiGraphics, mouseX, mouseY, partialTick);
+            graphics.fill(selX - 1, selY - 1, selX + 19, selY, 0xFF00FF88);
+            graphics.fill(selX - 1, selY + 20, selX + 19, selY + 21, 0xFF00FF88);
+            graphics.fill(selX - 1, selY, selX, selY + 20, 0xFF00FF88);
+            graphics.fill(selX + 18, selY, selX + 19, selY + 20, 0xFF00FF88);
         }
 
         @Override
