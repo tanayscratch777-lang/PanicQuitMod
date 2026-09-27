@@ -1,6 +1,6 @@
-package com.example.client.mixin;
+package com.autohotbar.client.mixin;
 
-import com.example.client.AutoHotbarClient;
+import com.autohotbar.client.AutoHotbarClient;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
 import net.minecraft.client.gui.screens.inventory.CreativeModeInventoryScreen;
@@ -14,9 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ContainerScreenMixin {
     @Inject(method = "extractSlot", at = @At("TAIL"))
     private void onExtractSlot(GuiGraphicsExtractor graphics, Slot slot, int mouseX, int mouseY, CallbackInfo ci) {
-        // Completely ignore creative inventory so creative tabs never glitch
         if ((Object) this instanceof CreativeModeInventoryScreen) return;
-
         AutoHotbarClient.Renderer.renderContainerSlot(graphics, slot);
     }
 }
