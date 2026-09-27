@@ -39,20 +39,20 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
-public class ExampleModClient implements ClientModInitializer {
+public class AutoHotbarClient implements ClientModInitializer {
     public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
         Identifier.fromNamespaceAndPath("autohotbar", "main")
     );
 
+    // Default toggle key: None (unbound)
     public static KeyMapping toggleKey;
+    // Default config screen key: H
     public static KeyMapping openConfigKey;
-    public static KeyMapping panicKey;
 
     @Override
     public void onInitializeClient() {
         Config.load();
 
-        // 1. AutoHotbar Toggle (Default: None)
         toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.autohotbar.toggle",
             InputConstants.Type.KEYSYM,
@@ -60,7 +60,6 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // 2. Open Config Screen (Default: H)
         openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
             "key.autohotbar.config",
             InputConstants.Type.KEYSYM,
@@ -68,21 +67,13 @@ public class ExampleModClient implements ClientModInitializer {
             CATEGORY
         ));
 
-        // 3. Integrated Panic Quit Key (Default: I, triggers with Left Alt)
-        panicKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
-            "key.autohotbar.panic",
-            InputConstants.Type.KEYSYM,
-            GLFW.GLFW_KEY_I,
-            CATEGORY
-        ));
-
-        // HUD Hotbar Overlay
+        // HUD hotbar indicator (walking around)
         HudElementRegistry.addLast(
             Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
             (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
         );
 
-        // Tick loop: keys & farm-optimized inventory cache
+        // Client Tick: handles hotkeys and throttled farm-safe inventory evaluation
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
 
@@ -99,43 +90,6 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // PANIC BUTTON LOGIC
-    // ==========================================================
-    public static boolean checkPanic(int key, int scancode, int modifiers) {
-        Minecraft client = Minecraft.getInstance();
-        if (client == null || panicKey == null) return false;
-
-        boolean keyMatches = panicKey.matches(key, scancode);
-        boolean altHeld = (modifiers & GLFW.GLFW_MOD_ALT) != 0 
-                || InputConstants.isKeyDown(client.getWindow(), GLFW.GLFW_KEY_LEFT_ALT);
-
-        if (keyMatches && altHeld) {
-            long window = client.getWindow().handle();
-            GLFW.glfwIconifyWindow(window);
-
-            if (client.level == null) {
-                System.exit(0);
-                return true;
-            }
-
-            new Thread(() -> {
-                try {
-                    if (client.getSingleplayerServer() != null) {
-                        client.getSingleplayerServer().halt(false);
-                    }
-                } catch (Exception ignored) {
-                } finally {
-                    System.exit(0);
-                }
-            }, "PanicQuit-Thread").start();
-
-            return true;
-        }
-
-        return false;
-    }
-
-    // ==========================================================
     // 1. CONFIGURATION SYSTEM
     // ==========================================================
     public static class Config {
@@ -143,7 +97,7 @@ public class ExampleModClient implements ClientModInitializer {
         private static final File FILE = FabricLoader.getInstance().getConfigDir().resolve("autohotbar_fairplay.json").toFile();
 
         public static class Rule {
-            public String ruleKind = "Type";
+            public String ruleKind = "Type"; // Type, Specific, Conditional, Empty
             public String category = "Sword";
             public String variant = "Best DPS";
             public String specificId = "";
@@ -176,6 +130,7 @@ public class ExampleModClient implements ClientModInitializer {
                 for (int i = 0; i < 9; i++) {
                     slots.add(new ArrayList<>());
                 }
+                // Defaults for slots 1 through 9
                 slots.get(0).add(new Rule("Type", "Sword", "Best DPS", ""));
                 slots.get(1).add(new Rule("Type", "Pickaxe", "Best Tier", ""));
                 slots.get(2).add(new Rule("Type", "Axe", "Best Weapon", ""));
@@ -237,7 +192,7 @@ public class ExampleModClient implements ClientModInitializer {
     }
 
     // ==========================================================
-    // 2. ENGINE (NO FALSE ALERTS)
+    // 2. ENGINE (FARM OPTIMIZED, NO GHOST INDICATORS)
     // ==========================================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -253,7 +208,7 @@ public class ExampleModClient implements ClientModInitializer {
             }
 
             tickCounter++;
-            if (tickCounter % 4 != 0) return;
+            if (tickCounter % 4 != 0) return; // Evaluates at most 4x a second
 
             Inventory inv = client.player.getInventory();
             int hash = 1;
@@ -262,7 +217,7 @@ public class ExampleModClient implements ClientModInitializer {
                 hash = 31 * hash + s.getItem().hashCode() + s.getCount();
             }
 
-            if (hash == lastInventoryHash) return;
+            if (hash == lastInventoryHash) return; // Unchanged, skip evaluation!
             lastInventoryHash = hash;
 
             evaluate(inv);
@@ -306,6 +261,7 @@ public class ExampleModClient implements ClientModInitializer {
                     }
                 }
 
+                // ONLY triggers if an item exists AND is not already in that hotbar slot!
                 if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
                     if (bestSlot != hotbarSlot) {
@@ -463,10 +419,10 @@ public class ExampleModClient implements ClientModInitializer {
                     int slotX = hotbarX + s * 20;
                     int slotY = hotbarY;
 
-                    // Clean top accent line
+                    // Clean top emerald line
                     graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
 
-                    // Badge in corner showing hotkey
+                    // Hotkey badge in corner
                     String key = Engine.getKeyName(s);
                     int textW = client.font.width(key);
                     int bW = Math.max(textW + 4, 9);
@@ -546,6 +502,7 @@ public class ExampleModClient implements ClientModInitializer {
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
+            // Glass toggle
             this.addRenderableWidget(Button.builder(
                 Component.literal("Glass " + (Config.data.glassMode ? "ON" : "OFF")),
                 btn -> {
@@ -555,6 +512,7 @@ public class ExampleModClient implements ClientModInitializer {
                 }
             ).bounds(cardX + cardW - 80, cardY + 12, 70, 18).build());
 
+            // 9 Slot Buttons
             int slotStart = cardX + (cardW / 2) - 95;
             for (int i = 0; i < 9; i++) {
                 final int idx = i;
@@ -564,6 +522,7 @@ public class ExampleModClient implements ClientModInitializer {
                 ).bounds(slotStart + i * 21, cardY + 54, 19, 18).build());
             }
 
+            // Rule Delete Buttons
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
             int listY = cardY + 98;
             for (int r = 0; r < Math.min(rules.size(), 3); r++) {
@@ -714,7 +673,6 @@ public class ExampleModClient implements ClientModInitializer {
                     btn -> {
                         variantIndex = (variantIndex + 1) % variants.length;
                         btn.setMessage(Component.literal("Variant: " + variants[variantIndex % variants.length]));
-                        this.rebuildWidgets();
                     }
                 ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
             }

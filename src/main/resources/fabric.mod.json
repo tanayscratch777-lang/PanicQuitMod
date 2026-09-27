@@ -3,7 +3,7 @@
   "id": "autohotbar_fairplay",
   "version": "${version}",
   "name": "AutoHotbar Fairplay",
-  "description": "Smart, fairplay hotbar organizer with integrated panic boss key.",
+  "description": "Smart, fairplay, zero-lag hotbar organizer overlay.",
   "authors": [
     "You"
   ],
@@ -13,7 +13,7 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.example.client.ExampleModClient"
+      "com.example.client.AutoHotbarClient"
     ]
   },
   "mixins": [

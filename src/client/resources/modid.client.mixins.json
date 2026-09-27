@@ -3,8 +3,7 @@
   "package": "com.example.client.mixin",
   "compatibilityLevel": "JAVA_25",
   "client": [
-    "ExampleClientMixin",
-    "KeyboardMixin"
+    "ContainerScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1
