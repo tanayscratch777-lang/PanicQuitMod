@@ -14,6 +14,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public class ContainerScreenMixin {
     @Inject(method = "renderSlot", at = @At("TAIL"))
     private void onRenderSlot(GuiGraphics graphics, Slot slot, CallbackInfo ci) {
+        // Ignores creative mode so tabs never glitch
         if ((Object) this instanceof CreativeModeInventoryScreen) return;
         AutoHotbarClient.Renderer.renderContainerSlot(graphics, slot);
     }

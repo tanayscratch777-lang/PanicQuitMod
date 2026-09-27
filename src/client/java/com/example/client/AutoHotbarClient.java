@@ -82,7 +82,6 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         });
     }
 
-    // Connects to ModMenu configuration button
     @Override
     public ConfigScreenFactory<?> getModConfigScreenFactory() {
         return LiquidGlassConfigScreen::new;
@@ -202,7 +201,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 2. ENGINE (FARM OPTIMIZED, ZERO GHOST HIGHLIGHTS)
+    // 2. ENGINE
     // ==========================================================
     public static class Engine {
         private static final int[] TARGET_HOTBAR_FOR_INV_SLOT = new int[36];
@@ -464,7 +463,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 3. CLEAN RENDERER (VULKAN & SODIUM PROOF)
+    // 3. RENDERER
     // ==========================================================
     public static class Renderer {
         public static final int EMERALD_GREEN = 0xFF10B981;
@@ -662,7 +661,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 5. ADD RULE SCREEN (ONLY TYPE & SPECIFIC TABS)
+    // 5. ADD RULE SCREEN
     // ==========================================================
     public static class AddRuleScreen extends Screen {
         private final LiquidGlassConfigScreen parent;
@@ -852,8 +851,15 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
 
             if ("Specific".equals(currentTab)) {
                 Identifier id = Identifier.tryParse(chosenItemId);
-                Item item = id != null ? BuiltInRegistries.ITEM.get(id).map(ref -> ref.value()).orElse(Items.AIR) : Items.AIR;
-                if (item != null && item != Items.AIR) {
+                Item item = Items.AIR;
+                if (id != null) {
+                    for (Item i : BuiltInRegistries.ITEM) {
+                        if (BuiltInRegistries.ITEM.getKey(i).equals(id)) {
+                            item = i; break;
+                        }
+                    }
+                }
+                if (item != Items.AIR) {
                     graphics.renderItem(new ItemStack(item), cardX + 24, cardY + 62);
                 }
             }
@@ -870,7 +876,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 6. SEARCHABLE ITEM PICKER SCREEN (REAL ITEM SPRITES)
+    // 6. SEARCHABLE ITEM PICKER SCREEN
     // ==========================================================
     public static class ItemPickerScreen extends Screen {
         private final AddRuleScreen parent;
@@ -974,7 +980,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 7. ENCHANTMENT PICKER (MAX LEVELS, MULTI-SELECT, CLEAN NAMES)
+    // 7. ENCHANTMENT PICKER (MAX LEVELS, MULTI-SELECT)
     // ==========================================================
     public static class EnchantPickerScreen extends Screen {
         private final AddRuleScreen parent;
