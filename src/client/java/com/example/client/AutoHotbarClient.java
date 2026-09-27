@@ -2,34 +2,34 @@ package com.example.client;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
-import com.mojang.blaze3d.platform.InputConstants;
 import com.terraformersmc.modmenu.api.ConfigScreenFactory;
 import com.terraformersmc.modmenu.api.ModMenuApi;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
-import net.fabricmc.fabric.api.client.keymapping.v1.KeyMappingHelper;
-import net.fabricmc.fabric.api.client.rendering.v1.hud.HudElementRegistry;
+import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
+import net.fabricmc.fabric.api.client.rendering.v1.hud.HudRenderCallback;
 import net.fabricmc.loader.api.FabricLoader;
-import net.minecraft.client.KeyMapping;
-import net.minecraft.client.Minecraft;
-import net.minecraft.client.gui.Font;
-import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.Button;
-import net.minecraft.client.gui.components.EditBox;
-import net.minecraft.client.gui.screens.Screen;
-import net.minecraft.core.component.DataComponents;
-import net.minecraft.core.registries.BuiltInRegistries;
-import net.minecraft.network.chat.Component;
-import net.minecraft.resources.Identifier;
-import net.minecraft.tags.ItemTags;
-import net.minecraft.world.entity.player.Inventory;
-import net.minecraft.world.food.FoodProperties;
-import net.minecraft.world.inventory.Slot;
-import net.minecraft.world.item.BlockItem;
-import net.minecraft.world.item.Item;
-import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.item.Items;
-import net.minecraft.world.level.block.Block;
+import net.minecraft.block.Block;
+import net.minecraft.client.MinecraftClient;
+import net.minecraft.client.font.TextRenderer;
+import net.minecraft.client.gui.DrawContext;
+import net.minecraft.client.gui.screen.Screen;
+import net.minecraft.client.gui.widget.ButtonWidget;
+import net.minecraft.client.gui.widget.TextFieldWidget;
+import net.minecraft.client.option.KeyBinding;
+import net.minecraft.client.util.InputUtil;
+import net.minecraft.component.DataComponentTypes;
+import net.minecraft.component.type.FoodComponent;
+import net.minecraft.entity.player.PlayerInventory;
+import net.minecraft.item.BlockItem;
+import net.minecraft.item.Item;
+import net.minecraft.item.ItemStack;
+import net.minecraft.item.Items;
+import net.minecraft.registry.Registries;
+import net.minecraft.registry.tag.ItemTags;
+import net.minecraft.screen.slot.Slot;
+import net.minecraft.text.Text;
+import net.minecraft.util.Identifier;
 import org.lwjgl.glfw.GLFW;
 
 import java.io.File;
@@ -44,40 +44,33 @@ import java.util.List;
 import java.util.Set;
 
 public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
-    public static final KeyMapping.Category CATEGORY = KeyMapping.Category.register(
-        Identifier.fromNamespaceAndPath("autohotbar", "main")
-    );
-
-    public static KeyMapping toggleKey;
-    public static KeyMapping openConfigKey;
+    public static KeyBinding toggleKey;
+    public static KeyBinding openConfigKey;
 
     @Override
     public void onInitializeClient() {
         Config.load();
 
-        toggleKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        toggleKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.autohotbar.toggle",
-            InputConstants.Type.KEYSYM,
-            InputConstants.UNKNOWN.getValue(),
-            CATEGORY
+            InputUtil.Type.KEYSYM,
+            InputUtil.UNKNOWN_KEY.getCode(),
+            "key.categories.autohotbar"
         ));
 
-        openConfigKey = KeyMappingHelper.registerKeyMapping(new KeyMapping(
+        openConfigKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
             "key.autohotbar.config",
-            InputConstants.Type.KEYSYM,
+            InputUtil.Type.KEYSYM,
             GLFW.GLFW_KEY_H,
-            CATEGORY
+            "key.categories.autohotbar"
         ));
 
-        HudElementRegistry.addLast(
-            Identifier.fromNamespaceAndPath("autohotbar", "hotbar_hud"),
-            (graphics, deltaTracker) -> Renderer.renderHudHotbar(graphics)
-        );
+        HudRenderCallback.EVENT.register((context, tickCounter) -> Renderer.renderHudHotbar(context));
 
         ClientTickEvents.END_CLIENT_TICK.register(client -> {
             if (client.player == null) return;
-            while (toggleKey.consumeClick()) Config.toggle();
-            while (openConfigKey.consumeClick()) client.setScreen(new LiquidGlassConfigScreen(client.screen));
+            while (toggleKey.wasPressed()) Config.toggle();
+            while (openConfigKey.wasPressed()) client.setScreen(new LiquidGlassConfigScreen(client.currentScreen));
             Engine.tick(client);
         });
     }
@@ -125,6 +118,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
 
         public static class Data {
             public boolean enabled = true;
+            public boolean glassMode = true;
             public List<List<Rule>> slots = new ArrayList<>();
 
             public Data() {
@@ -167,10 +161,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         public static void toggle() { data.enabled = !data.enabled; save(); }
 
         public static List<Rule> getRulesForSlot(int slot) {
-            if (data.slots == null) data.slots = new ArrayList<>();
-            while (data.slots.size() <= 9) data.slots.add(new ArrayList<>());
-            List<Rule> list = data.slots.get(slot);
-            return list != null ? list : new ArrayList<>();
+            if (slot >= 0 && slot < data.slots.size()) return data.slots.get(slot);
+            return new ArrayList<>();
         }
 
         public static void addRule(int slot, Rule rule) {
@@ -210,7 +202,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         private static final boolean[] HOTBAR_NEEDS_UPGRADE = new boolean[9];
         private static int tickCounter = 0;
 
-        public static void tick(Minecraft client) {
+        public static void tick(MinecraftClient client) {
             if (!Config.isEnabled() || client.player == null) {
                 Arrays.fill(TARGET_HOTBAR_FOR_INV_SLOT, -1);
                 Arrays.fill(HOTBAR_NEEDS_UPGRADE, false);
@@ -223,7 +215,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
             evaluate(client.player.getInventory());
         }
 
-        private static void evaluate(Inventory inv) {
+        private static void evaluate(PlayerInventory inv) {
             Arrays.fill(TARGET_HOTBAR_FOR_INV_SLOT, -1);
             Arrays.fill(HOTBAR_NEEDS_UPGRADE, false);
             Set<Integer> claimedInvSlots = new HashSet<>();
@@ -240,7 +232,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
 
                     for (int i = 0; i < 36; i++) {
                         if (claimedInvSlots.contains(i)) continue;
-                        ItemStack stack = inv.getItem(i);
+                        ItemStack stack = inv.getStack(i);
                         if (stack.isEmpty()) continue;
 
                         double s = score(stack, rule);
@@ -256,7 +248,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     }
                 }
 
-                if (bestSlot >= 0 && bestSlot <= 35) {
+                if (bestSlot >= 0) {
                     claimedInvSlots.add(bestSlot);
                     if (bestSlot != hotbarSlot) {
                         TARGET_HOTBAR_FOR_INV_SLOT[bestSlot] = hotbarSlot;
@@ -281,9 +273,9 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         }
 
         public static String getKeyName(int hotbarSlot) {
-            Minecraft client = Minecraft.getInstance();
-            if (client.options != null && hotbarSlot >= 0 && hotbarSlot < client.options.keyHotbarSlots.length) {
-                return client.options.keyHotbarSlots[hotbarSlot].getTranslatedKeyMessage().getString();
+            MinecraftClient client = MinecraftClient.getInstance();
+            if (client.options != null && hotbarSlot >= 0 && hotbarSlot < client.options.hotbarKeys.length) {
+                return client.options.hotbarKeys[hotbarSlot].getBoundKeyLocalizedText().getString();
             }
             return String.valueOf(hotbarSlot + 1);
         }
@@ -291,8 +283,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         public static double score(ItemStack stack, Config.Rule rule) {
             if (stack.isEmpty()) return -1.0;
             Item item = stack.getItem();
-            String itemId = BuiltInRegistries.ITEM.getKey(item).toString();
-            String enchantData = stack.has(DataComponents.ENCHANTMENTS) ? stack.get(DataComponents.ENCHANTMENTS).toString().toLowerCase() : "";
+            String itemId = Registries.ITEM.getId(item).toString();
+            String enchantData = stack.contains(DataComponentTypes.ENCHANTMENTS) ? stack.get(DataComponentTypes.ENCHANTMENTS).toString().toLowerCase() : "";
 
             for (String blacklisted : rule.blacklistedEnchants) {
                 if (enchantData.contains(blacklisted.toLowerCase())) return -1.0;
@@ -303,13 +295,13 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
 
             if ("Specific".equalsIgnoreCase(rule.ruleKind)) {
                 if (!itemId.equalsIgnoreCase(rule.specificId)) return -1.0;
-                if (rule.mustBeEnchanted && !stack.isEnchanted()) return -1.0;
+                if (rule.mustBeEnchanted && !stack.hasEnchantments()) return -1.0;
                 return 100.0 + stack.getCount();
             }
 
             switch (rule.category) {
                 case "Sword":
-                    if (stack.is(ItemTags.SWORDS) || itemId.contains("sword")) {
+                    if (stack.isIn(ItemTags.SWORDS) || itemId.contains("sword")) {
                         double tier = getTier(itemId);
                         if ("Netherite Only".equals(rule.variant) && tier < 6.0) return -1.0;
                         if ("Diamond+".equals(rule.variant) && tier < 5.0) return -1.0;
@@ -358,7 +350,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     return -1.0;
 
                 case "Pickaxe":
-                    if (stack.is(ItemTags.PICKAXES) || itemId.contains("pickaxe")) {
+                    if (stack.isIn(ItemTags.PICKAXES) || itemId.contains("pickaxe")) {
                         double s = getTier(itemId) * 10.0;
                         if ("With Silk Touch".equals(rule.variant) && !enchantData.contains("silk_touch")) return -1.0;
                         if ("With Fortune".equals(rule.variant) && !enchantData.contains("fortune")) return -1.0;
@@ -367,7 +359,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     return -1.0;
 
                 case "Axe":
-                    if (stack.is(ItemTags.AXES) || (itemId.contains("axe") && !itemId.contains("pickaxe"))) {
+                    if (stack.isIn(ItemTags.AXES) || (itemId.contains("axe") && !itemId.contains("pickaxe"))) {
                         double s = getTier(itemId) * 10.0;
                         if ("With Silk Touch".equals(rule.variant) && !enchantData.contains("silk_touch")) return -1.0;
                         if ("With Fortune".equals(rule.variant) && !enchantData.contains("fortune")) return -1.0;
@@ -376,7 +368,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     return -1.0;
 
                 case "Shovel":
-                    if (stack.is(ItemTags.SHOVELS) || itemId.contains("shovel")) {
+                    if (stack.isIn(ItemTags.SHOVELS) || itemId.contains("shovel")) {
                         double s = getTier(itemId) * 10.0;
                         if ("With Silk Touch".equals(rule.variant) && !enchantData.contains("silk_touch")) return -1.0;
                         if ("With Fortune".equals(rule.variant) && !enchantData.contains("fortune")) return -1.0;
@@ -385,7 +377,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     return -1.0;
 
                 case "Hoe":
-                    if (stack.is(ItemTags.HOES) || itemId.contains("hoe")) {
+                    if (stack.isIn(ItemTags.HOES) || itemId.contains("hoe")) {
                         double s = getTier(itemId) * 10.0;
                         if ("With Silk Touch".equals(rule.variant) && !enchantData.contains("silk_touch")) return -1.0;
                         if ("With Fortune".equals(rule.variant) && !enchantData.contains("fortune")) return -1.0;
@@ -397,7 +389,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     if (item instanceof BlockItem blockItem && !itemId.contains("torch")) {
                         if ("Hardest".equalsIgnoreCase(rule.variant)) {
                             Block block = blockItem.getBlock();
-                            return block.getExplosionResistance() * 10.0 + (stack.getCount() * 0.05);
+                            return block.getBlastResistance() * 10.0 + (stack.getCount() * 0.05);
                         } else if ("Soft Utility".equalsIgnoreCase(rule.variant)) {
                             if (itemId.contains("dirt") || itemId.contains("cobble") || itemId.contains("netherrack")) {
                                 return 50.0 + stack.getCount();
@@ -418,8 +410,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     return -1.0;
 
                 case "Food":
-                    if (stack.has(DataComponents.FOOD)) {
-                        FoodProperties food = stack.get(DataComponents.FOOD);
+                    if (stack.contains(DataComponentTypes.FOOD)) {
+                        FoodComponent food = stack.get(DataComponentTypes.FOOD);
                         if (food != null) {
                             if ("Fast Eating".equals(rule.variant) && (itemId.contains("kelp") || itemId.contains("berry"))) {
                                 return 50.0 + stack.getCount();
@@ -430,7 +422,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                             if ("Most Count Food".equals(rule.variant)) {
                                 return stack.getCount();
                             }
-                            return food.nutrition() * 2.0 + food.saturation() + (stack.getCount() * 0.01);
+                            return food.nutrition() * 2.0 + (stack.getCount() * 0.01);
                         }
                         return 10.0 + stack.getCount();
                     }
@@ -465,49 +457,48 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     }
 
     // ==========================================================
-    // 3. CLEAN RENDERER
+    // 3. CLEAN RENDERER (VULKAN & SODIUM PROOF)
     // ==========================================================
     public static class Renderer {
         public static final int EMERALD_GREEN = 0xFF10B981;
         public static final int EMERALD_TINT = 0x4010B981;
         public static final int BADGE_BG = 0xF0111827;
 
-        public static void renderHudHotbar(GuiGraphics graphics) {
+        public static void renderHudHotbar(DrawContext context) {
             if (!Config.isEnabled()) return;
-            Minecraft client = Minecraft.getInstance();
+            MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
-            int hotbarX = (graphics.guiWidth() - 182) / 2;
-            int hotbarY = graphics.guiHeight() - 22;
+            int hotbarX = (context.getScaledWindowWidth() - 182) / 2;
+            int hotbarY = context.getScaledWindowHeight() - 22;
 
             for (int s = 0; s < 9; s++) {
                 if (Engine.slotNeedsUpgrade(s)) {
                     int slotX = hotbarX + s * 20;
                     int slotY = hotbarY;
 
-                    graphics.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
+                    context.fill(slotX + 1, slotY + 1, slotX + 21, slotY + 3, EMERALD_GREEN);
 
                     String key = Engine.getKeyName(s);
-                    int textW = client.font.width(key);
+                    int textW = client.textRenderer.getWidth(key);
                     int bW = Math.max(textW + 4, 9);
                     int bX = slotX + 20 - bW;
                     int bY = slotY - 4;
 
-                    graphics.fill(bX, bY, bX + bW, bY + 8, BADGE_BG);
-                    graphics.fill(bX, bY, bX + bW, bY + 1, EMERALD_GREEN);
-                    graphics.drawString(client.font, key, bX + (bW - textW) / 2, bY + 1, 0xFFFFFFFF, false);
+                    context.fill(bX, bY, bX + bW, bY + 8, BADGE_BG);
+                    context.fill(bX, bY, bX + bW, bY + 1, EMERALD_GREEN);
+                    context.drawText(client.textRenderer, key, bX + (bW - textW) / 2, bY + 1, 0xFFFFFFFF, false);
                 }
             }
         }
 
-        public static void renderContainerSlot(GuiGraphics graphics, Slot slot) {
+        public static void renderContainerSlot(DrawContext context, Slot slot) {
             if (!Config.isEnabled()) return;
-            Minecraft client = Minecraft.getInstance();
+            MinecraftClient client = MinecraftClient.getInstance();
             if (client.player == null) return;
 
-            if (!(slot.container instanceof Inventory)) return;
-
-            int invSlot = slot.getContainerSlot();
+            if (!(slot.inventory instanceof PlayerInventory)) return;
+            int invSlot = slot.getIndex();
 
             if (invSlot < 0 || invSlot > 35) return;
 
@@ -516,54 +507,54 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                 int x = slot.x;
                 int y = slot.y;
 
-                graphics.pose().pushPose();
-                graphics.pose().translate(0, 0, 300.0F);
+                context.getMatrices().push();
+                context.getMatrices().translate(0, 0, 300.0F);
 
-                graphics.fill(x, y, x + 16, y + 16, EMERALD_TINT);
-                graphics.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
-                graphics.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
-                graphics.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
-                graphics.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
+                context.fill(x, y, x + 16, y + 16, EMERALD_TINT);
+                context.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
+                context.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
+                context.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
+                context.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
 
                 String keyName = Engine.getKeyName(targetHotbarSlot);
-                Font font = client.font;
+                TextRenderer font = client.textRenderer;
                 String badgeText = "->" + keyName;
-                int textW = font.width(badgeText);
+                int textW = font.getWidth(badgeText);
                 int badgeW = Math.max(textW + 4, 14);
                 int badgeH = 8;
                 int badgeX = x + 8 - (badgeW / 2);
                 int badgeY = y - 4;
 
-                graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, BADGE_BG);
-                graphics.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 1, EMERALD_GREEN);
-                graphics.drawString(font, badgeText, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
+                context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + badgeH, BADGE_BG);
+                context.fill(badgeX, badgeY, badgeX + badgeW, badgeY + 1, EMERALD_GREEN);
+                context.drawText(font, badgeText, badgeX + (badgeW - textW) / 2, badgeY + 1, 0xFFFFFFFF, false);
 
-                graphics.pose().popPose();
+                context.getMatrices().pop();
             }
 
             if (invSlot >= 0 && invSlot <= 8 && Engine.slotNeedsUpgrade(invSlot)) {
                 int x = slot.x;
                 int y = slot.y;
-                graphics.pose().pushPose();
-                graphics.pose().translate(0, 0, 300.0F);
-                graphics.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
-                graphics.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
-                graphics.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
-                graphics.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
-                graphics.pose().popPose();
+                context.getMatrices().push();
+                context.getMatrices().translate(0, 0, 300.0F);
+                context.fill(x, y, x + 16, y + 1, EMERALD_GREEN);
+                context.fill(x, y + 15, x + 16, y + 16, EMERALD_GREEN);
+                context.fill(x, y + 1, x + 1, y + 15, EMERALD_GREEN);
+                context.fill(x + 15, y + 1, x + 16, y + 15, EMERALD_GREEN);
+                context.getMatrices().pop();
             }
         }
     }
 
     // ==========================================================
-    // 4. MAIN CONFIG SCREEN
+    // 4. TRUE LIQUID GLASS CONFIG SCREEN
     // ==========================================================
     public static class LiquidGlassConfigScreen extends Screen {
         private final Screen parent;
         private int selectedSlot = 0;
 
         public LiquidGlassConfigScreen(Screen parent) {
-            super(Component.literal("AutoHotbar Fairplay"));
+            super(Text.literal("AutoHotbar Fairplay"));
             this.parent = parent;
         }
 
@@ -577,88 +568,88 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
             int slotStart = cardX + (cardW / 2) - 95;
             for (int i = 0; i < 9; i++) {
                 final int idx = i;
-                this.addRenderableWidget(Button.builder(
-                    Component.literal(String.valueOf(i + 1)),
-                    btn -> { this.selectedSlot = idx; this.rebuildWidgets(); }
-                ).bounds(slotStart + i * 21, cardY + 48, 19, 18).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal(String.valueOf(i + 1)),
+                    btn -> { this.selectedSlot = idx; this.clearAndInit(); }
+                ).dimensions(slotStart + i * 21, cardY + 48, 19, 18).build());
             }
 
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
             int listY = cardY + 92;
             for (int r = 0; r < Math.min(rules.size(), 3); r++) {
                 final int rIdx = r;
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("✕"),
-                    btn -> { Config.removeRule(selectedSlot, rIdx); this.rebuildWidgets(); }
-                ).bounds(cardX + cardW - 45, listY + r * 22, 20, 18).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("✕"),
+                    btn -> { Config.removeRule(selectedSlot, rIdx); this.clearAndInit(); }
+                ).dimensions(cardX + cardW - 45, listY + r * 22, 20, 18).build());
             }
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("+ Add rule"),
-                btn -> this.minecraft.setScreen(new AddRuleScreen(this, selectedSlot))
-            ).bounds(cardX + 16, cardY + cardH - 32, 160, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("+ Add rule"),
+                btn -> this.client.setScreen(new AddRuleScreen(this, selectedSlot))
+            ).dimensions(cardX + 16, cardY + cardH - 32, 160, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Cancel"),
-                btn -> this.onClose()
-            ).bounds(cardX + cardW - 130, cardY + cardH - 32, 55, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Cancel"),
+                btn -> this.close()
+            ).dimensions(cardX + cardW - 130, cardY + cardH - 32, 55, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Save"),
-                btn -> { Config.save(); this.onClose(); }
-            ).bounds(cardX + cardW - 70, cardY + cardH - 32, 55, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Save"),
+                btn -> { Config.save(); this.close(); }
+            ).dimensions(cardX + cardW - 70, cardY + cardH - 32, 55, 20).build());
         }
 
         @Override
-        public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             int cardW = Math.min(420, this.width - 24);
             int cardH = Math.min(230, this.height - 30);
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xCC0A0E17);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x904F6B90);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x304F6B90);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x504F6B90);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x504F6B90);
+            context.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xCC0A0E17);
+            context.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x904F6B90);
+            context.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x304F6B90);
+            context.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x504F6B90);
+            context.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x504F6B90);
 
-            graphics.drawString(this.font, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
-            graphics.drawString(this.font, "Smart, anticheat-safe hotbar manager with instant overlay.", cardX + 16, cardY + 26, 0xFFAAB8C8, false);
+            context.drawText(this.textRenderer, "AutoHotbar Fairplay", cardX + 16, cardY + 14, 0xFFFFFFFF, false);
+            context.drawText(this.textRenderer, "Smart, anticheat-safe hotbar manager with instant overlay.", cardX + 16, cardY + 26, 0xFFAAB8C8, false);
 
             int slotStart = cardX + (cardW / 2) - 95;
             int selX = slotStart + selectedSlot * 21;
-            graphics.fill(selX - 1, cardY + 47, selX + 20, cardY + 48, 0xFF10B981);
-            graphics.fill(selX - 1, cardY + 66, selX + 20, cardY + 67, 0xFF10B981);
-            graphics.fill(selX - 1, cardY + 47, selX, cardY + 67, 0xFF10B981);
-            graphics.fill(selX + 19, cardY + 47, selX + 20, cardY + 67, 0xFF10B981);
+            context.fill(selX - 1, cardY + 47, selX + 20, cardY + 48, 0xFF10B981);
+            context.fill(selX - 1, cardY + 66, selX + 20, cardY + 67, 0xFF10B981);
+            context.fill(selX - 1, cardY + 47, selX, cardY + 67, 0xFF10B981);
+            context.fill(selX + 19, cardY + 47, selX + 20, cardY + 67, 0xFF10B981);
 
             List<Config.Rule> rules = Config.getRulesForSlot(selectedSlot);
-            graphics.drawString(this.font, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 74, 0xFFAAB8C8, false);
+            context.drawText(this.textRenderer, "Slot " + (selectedSlot + 1) + "   " + rules.size() + " rules — lower # wins", cardX + 16, cardY + 74, 0xFFAAB8C8, false);
 
             int boxY = cardY + 86;
             int boxH = cardH - 128;
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0x80080B12);
-            graphics.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0x50334155);
+            context.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + boxH, 0x80080B12);
+            context.fill(cardX + 16, boxY, cardX + cardW - 16, boxY + 1, 0x50334155);
 
             if (rules.isEmpty()) {
                 String emptyMsg = "No rules — click \"+ Add rule\" to start";
-                graphics.drawString(this.font, emptyMsg, cardX + (cardW / 2) - this.font.width(emptyMsg) / 2, boxY + 28, 0xFF708090, false);
+                context.drawText(this.textRenderer, emptyMsg, cardX + (cardW / 2) - this.textRenderer.getWidth(emptyMsg) / 2, boxY + 28, 0xFF708090, false);
             } else {
                 for (int r = 0; r < Math.min(rules.size(), 3); r++) {
                     Config.Rule rule = rules.get(r);
                     int rY = boxY + 6 + (r * 22);
-                    graphics.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xAA1E293B);
-                    graphics.drawString(this.font, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xFFFFFFFF, false);
+                    context.fill(cardX + 22, rY, cardX + cardW - 50, rY + 18, 0xAA1E293B);
+                    context.drawText(this.textRenderer, (r + 1) + ". " + rule.getDisplayText(), cardX + 28, rY + 5, 0xFFFFFFFF, false);
                 }
             }
 
-            super.render(graphics, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
         }
 
         @Override
-        public void onClose() {
+        public void close() {
             Config.save();
-            if (this.minecraft != null) this.minecraft.setScreen(this.parent);
+            if (this.client != null) this.client.setScreen(this.parent);
         }
     }
 
@@ -682,7 +673,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         public boolean mustBeEnchanted = false;
 
         public AddRuleScreen(LiquidGlassConfigScreen parent, int slotIndex) {
-            super(Component.literal("Add rule"));
+            super(Text.literal("Add rule"));
             this.parent = parent;
             this.slotIndex = slotIndex;
         }
@@ -698,64 +689,64 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
             int tabW = (cardW - 32) / 2;
             for (int t = 0; t < tabs.length; t++) {
                 final String tabName = tabs[t];
-                this.addRenderableWidget(Button.builder(
-                    Component.literal(tabName),
-                    btn -> { this.currentTab = tabName; this.rebuildWidgets(); }
-                ).bounds(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal(tabName),
+                    btn -> { this.currentTab = tabName; this.clearAndInit(); }
+                ).dimensions(cardX + 16 + t * tabW, cardY + 28, tabW - 4, 18).build());
             }
 
             if ("Type".equals(currentTab)) {
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Category: " + CATEGORIES[categoryIndex]),
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Category: " + CATEGORIES[categoryIndex]),
                     btn -> {
                         categoryIndex = (categoryIndex + 1) % CATEGORIES.length;
                         variantIndex = 0;
-                        this.rebuildWidgets();
+                        this.clearAndInit();
                     }
-                ).bounds(cardX + 24, cardY + 68, 175, 20).build());
+                ).dimensions(cardX + 24, cardY + 68, 175, 20).build());
 
                 String[] variants = getVariants(CATEGORIES[categoryIndex]);
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Variant: " + variants[variantIndex % variants.length]),
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Variant: " + variants[variantIndex % variants.length]),
                     btn -> {
                         variantIndex = (variantIndex + 1) % variants.length;
-                        btn.setMessage(Component.literal("Variant: " + variants[variantIndex % variants.length]));
+                        btn.setMessage(Text.literal("Variant: " + variants[variantIndex % variants.length]));
                     }
-                ).bounds(cardX + cardW - 200, cardY + 68, 175, 20).build());
+                ).dimensions(cardX + cardW - 200, cardY + 68, 175, 20).build());
 
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Enchants (" + requiredEnchants.size() + " req, " + blacklistedEnchants.size() + " ban)"),
-                    btn -> this.minecraft.setScreen(new EnchantPickerScreen(this))
-                ).bounds(cardX + 24, cardY + 92, 200, 18).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Enchants (" + requiredEnchants.size() + " req, " + blacklistedEnchants.size() + " ban)"),
+                    btn -> this.client.setScreen(new EnchantPickerScreen(this))
+                ).dimensions(cardX + 24, cardY + 92, 200, 18).build());
             }
 
             if ("Specific".equals(currentTab)) {
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Pick Item... (" + formatName(chosenItemId) + ")"),
-                    btn -> this.minecraft.setScreen(new ItemPickerScreen(this))
-                ).bounds(cardX + 48, cardY + 60, 200, 20).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Pick Item... (" + formatName(chosenItemId) + ")"),
+                    btn -> this.client.setScreen(new ItemPickerScreen(this))
+                ).dimensions(cardX + 48, cardY + 60, 200, 20).build());
 
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Enchants (" + requiredEnchants.size() + ")"),
-                    btn -> this.minecraft.setScreen(new EnchantPickerScreen(this))
-                ).bounds(cardX + cardW - 160, cardY + 60, 135, 20).build());
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Enchants (" + requiredEnchants.size() + ")"),
+                    btn -> this.client.setScreen(new EnchantPickerScreen(this))
+                ).dimensions(cardX + cardW - 160, cardY + 60, 135, 20).build());
 
-                this.addRenderableWidget(Button.builder(
-                    Component.literal("Must be Enchanted: " + (mustBeEnchanted ? "YES" : "NO")),
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal("Must be Enchanted: " + (mustBeEnchanted ? "YES" : "NO")),
                     btn -> {
                         mustBeEnchanted = !mustBeEnchanted;
-                        btn.setMessage(Component.literal("Must be Enchanted: " + (mustBeEnchanted ? "YES" : "NO")));
+                        btn.setMessage(Text.literal("Must be Enchanted: " + (mustBeEnchanted ? "YES" : "NO")));
                     }
-                ).bounds(cardX + 48, cardY + 86, 200, 18).build());
+                ).dimensions(cardX + 48, cardY + 86, 200, 18).build());
             }
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Cancel"),
-                btn -> this.minecraft.setScreen(this.parent)
-            ).bounds(cardX + cardW - 130, cardY + cardH - 32, 55, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Cancel"),
+                btn -> this.client.setScreen(this.parent)
+            ).dimensions(cardX + cardW - 130, cardY + cardH - 32, 55, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Save"),
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Save"),
                 btn -> {
                     if ("Type".equals(currentTab)) {
                         String cat = CATEGORIES[categoryIndex];
@@ -770,9 +761,9 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                         r.requiredEnchants = new ArrayList<>(this.requiredEnchants);
                         Config.addRule(slotIndex, r);
                     }
-                    this.minecraft.setScreen(this.parent);
+                    this.client.setScreen(this.parent);
                 }
-            ).bounds(cardX + cardW - 70, cardY + cardH - 32, 55, 20).build());
+            ).dimensions(cardX + cardW - 70, cardY + cardH - 32, 55, 20).build());
         }
 
         private String[] getVariants(String category) {
@@ -825,64 +816,56 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         }
 
         @Override
-        public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
             int cardW = Math.min(420, this.width - 24);
             int cardH = Math.min(230, this.height - 30);
             int cardX = (this.width - cardW) / 2;
             int cardY = (this.height - cardH) / 2;
 
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xD00A0E17);
-            graphics.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x904F6B90);
-            graphics.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x304F6B90);
-            graphics.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x504F6B90);
-            graphics.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x504F6B90);
+            context.fill(cardX, cardY, cardX + cardW, cardY + cardH, 0xD00A0E17);
+            context.fill(cardX, cardY, cardX + cardW, cardY + 1, 0x904F6B90);
+            context.fill(cardX, cardY + cardH - 1, cardX + cardW, cardY + cardH, 0x304F6B90);
+            context.fill(cardX, cardY, cardX + 1, cardY + cardH, 0x504F6B90);
+            context.fill(cardX + cardW - 1, cardY, cardX + cardW, cardY + cardH, 0x504F6B90);
 
-            graphics.drawString(this.font, "Add rule", cardX + 16, cardY + 12, 0xFFFFFFFF, false);
+            context.drawText(this.textRenderer, "Add rule", cardX + 16, cardY + 12, 0xFFFFFFFF, false);
             int rulesCount = Config.getRulesForSlot(slotIndex).size();
-            graphics.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF1E293B);
-            graphics.drawString(this.font, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 13, 0xFFCBD5E1, false);
+            context.fill(cardX + cardW - 85, cardY + 8, cardX + cardW - 16, cardY + 22, 0xFF1E293B);
+            context.drawText(this.textRenderer, "Priority: " + (rulesCount + 1), cardX + cardW - 77, cardY + 13, 0xFFCBD5E1, false);
 
             String[] tabs = { "Type", "Specific" };
             int tabW = (cardW - 32) / 2;
             for (int t = 0; t < tabs.length; t++) {
                 if (tabs[t].equals(currentTab)) {
                     int tX = cardX + 16 + t * tabW;
-                    graphics.fill(tX, cardY + 44, tX + tabW - 4, cardY + 46, 0xFF10B981);
+                    context.fill(tX, cardY + 44, tX + tabW - 4, cardY + 46, 0xFF10B981);
                 }
             }
 
             if ("Specific".equals(currentTab)) {
-                Item item = Items.AIR;
-                Identifier id = Identifier.tryParse(chosenItemId);
-                if (id != null) {
-                    for (Item i : BuiltInRegistries.ITEM) {
-                        if (BuiltInRegistries.ITEM.getKey(i).equals(id)) {
-                            item = i; break;
-                        }
-                    }
-                }
-                if (item != Items.AIR) {
-                    graphics.renderItem(new ItemStack(item), cardX + 24, cardY + 62);
+                Item item = Registries.ITEM.get(Identifier.of(chosenItemId));
+                if (item != null && item != Items.AIR) {
+                    context.drawItem(new ItemStack(item), cardX + 24, cardY + 62);
                 }
             }
 
             String[] descLines = getDescription().split("\n");
             int textY = cardY + 116;
             for (String line : descLines) {
-                graphics.drawString(this.font, line, cardX + 24, textY, 0xFFAAB8C8, false);
+                context.drawText(this.textRenderer, line, cardX + 24, textY, 0xFFAAB8C8, false);
                 textY += 12;
             }
 
-            super.render(graphics, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
         }
     }
 
     // ==========================================================
-    // 6. SEARCHABLE ITEM PICKER SCREEN
+    // 6. SEARCHABLE ITEM PICKER SCREEN (REAL ITEM SPRITES)
     // ==========================================================
     public static class ItemPickerScreen extends Screen {
         private final AddRuleScreen parent;
-        private EditBox searchBox;
+        private TextFieldWidget searchBox;
         private final List<Item> allItems = new ArrayList<>();
         private List<Item> filteredItems = new ArrayList<>();
         private int page = 0;
@@ -890,9 +873,9 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         private String currentSearch = "";
 
         public ItemPickerScreen(AddRuleScreen parent) {
-            super(Component.literal("Pick an item"));
+            super(Text.literal("Pick an item"));
             this.parent = parent;
-            for (Item item : BuiltInRegistries.ITEM) {
+            for (Item item : Registries.ITEM) {
                 if (item != Items.AIR) allItems.add(item);
             }
             this.filteredItems = new ArrayList<>(allItems);
@@ -901,25 +884,25 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         @Override
         protected void init() {
             int centerX = this.width / 2;
-            searchBox = new EditBox(this.font, centerX - 100, 25, 200, 18, Component.literal("Search"));
-            searchBox.setValue(currentSearch);
-            searchBox.setResponder(this::updateSearch);
-            this.addRenderableWidget(searchBox);
+            searchBox = new TextFieldWidget(this.textRenderer, centerX - 100, 25, 200, 18, Text.literal("Search"));
+            searchBox.setText(currentSearch);
+            searchBox.setChangedListener(this::updateSearch);
+            this.addDrawableChild(searchBox);
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("< Prev"),
-                btn -> { if (page > 0) { page--; this.rebuildWidgets(); } }
-            ).bounds(centerX - 100, this.height - 28, 60, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("< Prev"),
+                btn -> { if (page > 0) { page--; this.clearAndInit(); } }
+            ).dimensions(centerX - 100, this.height - 28, 60, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Next >"),
-                btn -> { if ((page + 1) * ITEMS_PER_PAGE < filteredItems.size()) { page++; this.rebuildWidgets(); } }
-            ).bounds(centerX + 40, this.height - 28, 60, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Next >"),
+                btn -> { if ((page + 1) * ITEMS_PER_PAGE < filteredItems.size()) { page++; this.clearAndInit(); } }
+            ).dimensions(centerX + 40, this.height - 28, 60, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Back"),
-                btn -> this.minecraft.setScreen(this.parent)
-            ).bounds(centerX - 30, this.height - 28, 60, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Back"),
+                btn -> this.client.setScreen(this.parent)
+            ).dimensions(centerX - 30, this.height - 28, 60, 20).build());
 
             int gridStartX = centerX - 90;
             int gridStartY = 48;
@@ -931,13 +914,13 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     if (idx >= filteredItems.size()) break;
 
                     Item item = filteredItems.get(idx);
-                    this.addRenderableWidget(Button.builder(
-                        Component.empty(),
+                    this.addDrawableChild(ButtonWidget.builder(
+                        Text.empty(),
                         btn -> {
-                            parent.chosenItemId = BuiltInRegistries.ITEM.getKey(item).toString();
-                            this.minecraft.setScreen(this.parent);
+                            parent.chosenItemId = Registries.ITEM.getId(item).toString();
+                            this.client.setScreen(this.parent);
                         }
-                    ).bounds(gridStartX + col * 20, gridStartY + row * 20, 18, 18).build());
+                    ).dimensions(gridStartX + col * 20, gridStartY + row * 20, 18, 18).build());
                 }
             }
         }
@@ -950,10 +933,10 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                 filteredItems = new ArrayList<>(allItems);
             } else {
                 filteredItems = allItems.stream()
-                    .filter(i -> BuiltInRegistries.ITEM.getKey(i).getPath().toLowerCase().contains(query))
+                    .filter(i -> Registries.ITEM.getId(i).getPath().toLowerCase().contains(query))
                     .toList();
             }
-            this.rebuildWidgets();
+            this.clearAndInit();
         }
 
         @Override
@@ -963,20 +946,20 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         }
 
         @Override
-        public boolean charTyped(char codePoint, int modifiers) {
-            if (searchBox.charTyped(codePoint, modifiers)) return true;
-            return super.charTyped(codePoint, modifiers);
+        public boolean charTyped(char chr, int modifiers) {
+            if (searchBox.charTyped(chr, modifiers)) return true;
+            return super.charTyped(chr, modifiers);
         }
 
         @Override
-        public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-            graphics.fill(0, 0, this.width, this.height, 0xD80A0E17);
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            context.fill(0, 0, this.width, this.height, 0xD80A0E17);
 
             int centerX = this.width / 2;
             String title = "Pick an Item (" + filteredItems.size() + " available)";
-            graphics.drawString(this.font, title, centerX - this.font.width(title) / 2, 10, 0xFFFFFFFF, false);
+            context.drawText(this.textRenderer, title, centerX - this.textRenderer.getWidth(title) / 2, 10, 0xFFFFFFFF, false);
 
-            super.render(graphics, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
 
             int gridStartX = centerX - 90;
             int gridStartY = 48;
@@ -987,7 +970,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     int idx = startIdx + (row * 9 + col);
                     if (idx >= filteredItems.size()) break;
                     Item item = filteredItems.get(idx);
-                    graphics.renderItem(new ItemStack(item), gridStartX + col * 20 + 1, gridStartY + row * 20 + 1);
+                    context.drawItem(new ItemStack(item), gridStartX + col * 20 + 1, gridStartY + row * 20 + 1);
                 }
             }
         }
@@ -998,7 +981,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
     // ==========================================================
     public static class EnchantPickerScreen extends Screen {
         private final AddRuleScreen parent;
-        private EditBox searchBox;
+        private TextFieldWidget searchBox;
 
         public static class EnchantInfo {
             public String id;
@@ -1055,30 +1038,30 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         private List<EnchantInfo> filtered = new ArrayList<>(ENCHANT_DATABASE);
 
         public EnchantPickerScreen(AddRuleScreen parent) {
-            super(Component.literal("Pick enchantments"));
+            super(Text.literal("Pick enchantments"));
             this.parent = parent;
         }
 
         @Override
         protected void init() {
             int centerX = this.width / 2;
-            searchBox = new EditBox(this.font, centerX - 110, 25, 220, 18, Component.literal("Search"));
-            searchBox.setResponder(this::updateSearch);
-            this.addRenderableWidget(searchBox);
+            searchBox = new TextFieldWidget(this.textRenderer, centerX - 110, 25, 220, 18, Text.literal("Search"));
+            searchBox.setChangedListener(this::updateSearch);
+            this.addDrawableChild(searchBox);
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Clear All"),
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Clear All"),
                 btn -> {
                     parent.requiredEnchants.clear();
                     parent.blacklistedEnchants.clear();
-                    this.rebuildWidgets();
+                    this.clearAndInit();
                 }
-            ).bounds(centerX - 110, this.height - 28, 80, 20).build());
+            ).dimensions(centerX - 110, this.height - 28, 80, 20).build());
 
-            this.addRenderableWidget(Button.builder(
-                Component.literal("Done"),
-                btn -> this.minecraft.setScreen(this.parent)
-            ).bounds(centerX + 30, this.height - 28, 80, 20).build());
+            this.addDrawableChild(ButtonWidget.builder(
+                Text.literal("Done"),
+                btn -> this.client.setScreen(this.parent)
+            ).dimensions(centerX + 30, this.height - 28, 80, 20).build());
 
             int startY = 48;
             for (int i = 0; i < Math.min(filtered.size(), 6); i++) {
@@ -1089,8 +1072,8 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                 String status = req ? "[REQUIRED]" : (ban ? "[BANNED]" : "[OFF]");
                 String label = info.cleanName + " (Max: " + info.maxLevelStr + ") " + status;
 
-                this.addRenderableWidget(Button.builder(
-                    Component.literal(label),
+                this.addDrawableChild(ButtonWidget.builder(
+                    Text.literal(label),
                     btn -> {
                         if (parent.requiredEnchants.contains(info.id)) {
                             parent.requiredEnchants.remove(info.id);
@@ -1100,9 +1083,9 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                         } else {
                             parent.requiredEnchants.add(info.id);
                         }
-                        this.rebuildWidgets();
+                        this.clearAndInit();
                     }
-                ).bounds(centerX - 110, startY + i * 22, 220, 20).build());
+                ).dimensions(centerX - 110, startY + i * 22, 220, 20).build());
             }
         }
 
@@ -1115,7 +1098,7 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
                     .filter(e -> e.cleanName.toLowerCase().contains(q) || e.id.contains(q))
                     .toList();
             }
-            this.rebuildWidgets();
+            this.clearAndInit();
         }
 
         @Override
@@ -1125,20 +1108,20 @@ public class AutoHotbarClient implements ClientModInitializer, ModMenuApi {
         }
 
         @Override
-        public boolean charTyped(char codePoint, int modifiers) {
-            if (searchBox.charTyped(codePoint, modifiers)) return true;
-            return super.charTyped(codePoint, modifiers);
+        public boolean charTyped(char chr, int modifiers) {
+            if (searchBox.charTyped(chr, modifiers)) return true;
+            return super.charTyped(chr, modifiers);
         }
 
         @Override
-        public void render(GuiGraphics graphics, int mouseX, int mouseY, float delta) {
-            graphics.fill(0, 0, this.width, this.height, 0xD80A0E17);
+        public void render(DrawContext context, int mouseX, int mouseY, float delta) {
+            context.fill(0, 0, this.width, this.height, 0xD80A0E17);
 
             int centerX = this.width / 2;
             String title = "Enchantment Filters (Click row: Req -> Ban -> Off)";
-            graphics.drawString(this.font, title, centerX - this.font.width(title) / 2, 10, 0xFFFFFFFF, false);
+            context.drawText(this.textRenderer, title, centerX - this.textRenderer.getWidth(title) / 2, 10, 0xFFFFFFFF, false);
 
-            super.render(graphics, mouseX, mouseY, delta);
+            super.render(context, mouseX, mouseY, delta);
         }
     }
 }
