@@ -4,9 +4,7 @@
   "version": "${version}",
   "name": "AutoHotbar Fairplay",
   "description": "Smart, fairplay, zero-lag hotbar organizer overlay.",
-  "authors": [
-    "You"
-  ],
+  "authors": ["You"],
   "contact": {},
   "license": "CC0-1.0",
   "icon": "assets/modid/icon.png",
