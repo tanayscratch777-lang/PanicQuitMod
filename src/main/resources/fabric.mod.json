@@ -13,10 +13,10 @@
   "environment": "client",
   "entrypoints": {
     "client": [
-      "com.autohotbar.client.AutoHotbarClient"
+      "com.example.client.AutoHotbarClient"
     ],
     "modmenu": [
-      "com.autohotbar.client.AutoHotbarClient"
+      "com.example.client.AutoHotbarClient"
     ]
   },
   "mixins": [
